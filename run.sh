@@ -69,18 +69,37 @@ DOCKER_CMD=(
   --user "$HOST_UID:$HOST_GID"
   --workdir /workspace/current-repo
   "${MOUNTS[@]}"
-  --mount "type=bind,src=$HOME/.local/bin,dst=/tmp/home/.local/bin,readonly"
+
+  # Mount host user scripts read-only (but NOT under $HOME). Mounting under
+  # /tmp/home/.local/bin causes Docker to create /tmp/home/.local as root:root 0755,
+  # which breaks tools like `uv` that need to write to $HOME/.local/share.
+  --mount "type=bind,src=$HOME/.local/bin,dst=/host-local-bin,readonly"
+
+  # Optional: allow read-only access to your dev checkouts for helper scripts
+  # (e.g. asks.sh expects $HOME/dev/*). Keep RO by default.
   --mount "type=bind,src=$HOME/dev,dst=/tmp/home/dev,readonly"
   --mount "type=bind,src=$HOME/dev-external,dst=/tmp/home/dev-external,readonly"
+
   --mount "type=bind,src=$PI_AGENT_DIR,dst=/pi/agent,readonly"
   --mount "type=bind,src=$PI_PROFILE_DIR,dst=/pi/profiles/$PROFILE/agent"
+
   -e "PI_CODING_AGENT_DIR=/pi/profiles/$PROFILE/agent"
+
+  # Keep uv/python caches off the profile mounts and in container-local /tmp.
   -e "UV_CACHE_DIR=/tmp/uv-cache"
+  -e "XDG_CACHE_HOME=/tmp/xdg-cache"
+  -e "XDG_DATA_HOME=/tmp/xdg-data"
+
   -e "HOME=/tmp/home"
-  -e "PATH=/tmp/home/.local/bin:/usr/local/bin:/usr/bin:/bin"
-  -e "GEMINI_API_KEY=$GEMINI_API_KEY"
+  -e "PATH=/host-local-bin:/usr/local/bin:/usr/bin:/bin"
+
   "$IMAGE_NAME:$IMAGE_TAG"
 )
+
+# Only pass GEMINI_API_KEY if it's set on the host.
+if [[ -n "${GEMINI_API_KEY:-}" ]]; then
+  DOCKER_CMD+=( -e "GEMINI_API_KEY=$GEMINI_API_KEY" )
+fi
 
 # Bash 3.2 + `set -u` treats empty arrays as "unbound" when expanded.
 # Only append PI args if there are any.

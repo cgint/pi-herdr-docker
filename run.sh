@@ -9,7 +9,7 @@ set -euo pipefail
 IMAGE_NAME="pi-agent-tools"
 IMAGE_TAG="node20"
 PROFILE="partner"
-RW_DIRS=("docs" "openspec" ".pi")
+RW_DIRS=() # ("docs" "openspec" ".pi")
 
 # Parse args
 PI_ARGS=()

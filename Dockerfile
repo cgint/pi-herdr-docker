@@ -33,7 +33,8 @@ RUN set -euo pipefail; \
     fd-find \
     graphviz \
     python3 \
-    python3-venv; \
+    python3-venv \
+    python-is-python3; \
   rm -rf /var/lib/apt/lists/*
 
 # Provide `fd` (Debian calls it `fdfind`)
@@ -63,7 +64,7 @@ RUN set -euo pipefail; \
 
 # Install pi (coding agent)
 RUN set -euo pipefail; \
-  npm install -g @mariozechner/pi-coding-agent; \
+  npm install -g @mariozechner/pi-coding-agent @fission-ai/openspec@latest @google/gemini-cli; \
   npm cache clean --force
 
 ENV PATH="/usr/local/bin:$PATH"

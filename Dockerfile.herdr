@@ -1,0 +1,100 @@
+# pi-agent-docker: tools image + herdr (headless server) + pi.
+#
+# Includes everything from the base Dockerfile (pi-coding-agent, ripgrep,
+# fd, uv, d2, git, jq, curl) plus:
+# - herdr 0.9.1 (linux-aarch64 / linux-x86_64 static binary, checksum-pinned)
+# - openssh-client (for `herdr --remote` from the host, optional)
+#
+# Build (from the pi-agent-docker repo):
+#   docker build -f Dockerfile.herdr -t pi-agent-herdr:node22 .
+#
+# Run the headless server (instant, read-write ~/.pi):
+#   ./herdr.sh
+#
+# Base: node:22-trixie. pi-coding-agent >=0.84 requires Node >=22 (fs.globSync).
+# Trixie (Debian 13) is the current stable; bullseye packages are purged.
+FROM node:22-trixie
+
+SHELL ["/bin/bash", "-lc"]
+
+ARG D2_VERSION=0.6.9
+ARG HERDR_VERSION=0.9.1
+
+# Basic utilities
+RUN set -euo pipefail; \
+  apt-get update; \
+  apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    git \
+    jq \
+    unzip \
+    xz-utils \
+    ripgrep \
+    fd-find \
+    graphviz \
+    openssh-client \
+    python3 \
+    python3-venv \
+    python-is-python3; \
+  rm -rf /var/lib/apt/lists/*
+
+# Provide `fd` (Debian calls it `fdfind`)
+RUN set -euo pipefail; \
+  if command -v fdfind >/dev/null 2>&1; then ln -sf "$(command -v fdfind)" /usr/local/bin/fd; fi
+
+# Install uv/uvx
+RUN set -euo pipefail; \
+  curl -LsSf https://astral.sh/uv/install.sh | sh; \
+  mv /root/.local/bin/uv /usr/local/bin/uv; \
+  mv /root/.local/bin/uvx /usr/local/bin/uvx
+
+# Install d2
+RUN set -euo pipefail; \
+  arch="$(dpkg --print-architecture)"; \
+  case "$arch" in \
+    amd64) d2_arch="linux-amd64" ;; \
+    arm64) d2_arch="linux-arm64" ;; \
+    *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
+  esac; \
+  curl -fL "https://github.com/terrastruct/d2/releases/download/v${D2_VERSION}/d2-v${D2_VERSION}-${d2_arch}.tar.gz" -o /tmp/d2.tgz; \
+  tar -xzf /tmp/d2.tgz -C /tmp; \
+  install -m 0755 "/tmp/d2-v${D2_VERSION}/bin/d2" /usr/local/bin/d2; \
+  rm -rf /tmp/d2.tgz "/tmp/d2-v${D2_VERSION}"
+
+# Install pi (coding agent) — use the current package name @earendil-works
+# (the old @mariozechner/pi-coding-agent is frozen at 0.73.1 and lacks
+# knowledge of newer model IDs like claude-opus-5-5).
+RUN set -euo pipefail; \
+  npm install -g @earendil-works/pi-coding-agent@latest @fission-ai/openspec@latest @google/gemini-cli; \
+  npm cache clean --force
+
+# Install herdr (checksum-pinned static binary)
+RUN set -euo pipefail; \
+  arch="$(dpkg --print-architecture)"; \
+  case "$arch" in \
+    amd64)  herdr_asset="linux-x86_64" ;; \
+    arm64)  herdr_asset="linux-aarch64" ;; \
+    *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
+  esac; \
+  curl -fsSL "https://herdr.dev/latest.json" -o /tmp/herdr-latest.json; \
+  url=$(jq -r ".assets[\"${herdr_asset}\"]" /tmp/herdr-latest.json); \
+  sha=$(jq -r ".sha256[\"${herdr_asset}\"]" /tmp/herdr-latest.json); \
+  ver=$(jq -r ".version" /tmp/herdr-latest.json); \
+  if [[ "$ver" != "$HERDR_VERSION" ]]; then \
+    echo "herdr manifest version $ver != pinned $HERDR_VERSION — refusing to install a different version" >&2; \
+    exit 1; \
+  fi; \
+  curl -fsSL "$url" -o /tmp/herdr; \
+  echo "${sha}  /tmp/herdr" | sha256sum -c -; \
+  install -m 0755 /tmp/herdr /usr/local/bin/herdr; \
+  rm -f /tmp/herdr /tmp/herdr-latest.json; \
+  herdr --version
+
+ENV PATH="/usr/local/bin:$PATH"
+
+# Writable HOME for arbitrary --user uid:gid
+RUN set -euo pipefail; mkdir -p /tmp/home; chmod 0777 /tmp/home
+
+# herdr headless server is the default entrypoint
+CMD ["herdr", "server"]

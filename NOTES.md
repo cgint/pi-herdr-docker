@@ -29,6 +29,9 @@ under the user's home at their host paths.
   breaks them (target `../../../agent/...` doesn't exist in the container).
 - Container PATH is `/usr/local/bin:/usr/bin:/bin` — `/usr/sbin` is NOT in it.
   `runuser` lives at `/usr/sbin/runuser` and will NOT be found without full path.
+- **macOS Docker Desktop UID mapping (verified):** host UID 501 maps directly
+  to container UID 501. Files in bind mounts show as `501 20`. No remapping.
+  `--user 501:20` works as expected.
 
 **Review consensus (3 sub-agent reviews, 2026-09-29):**
 
@@ -81,14 +84,19 @@ if [[ -f /opt/herdr-config.toml && ! -f "$HERDR_STATE/config.toml" ]]; then
   cp /opt/herdr-config.toml "$HERDR_STATE/config.toml"
 fi
 
-# Home-path symlinks (so ~/dev, ~/dev-external work at host paths too)
-ln -sf /Users/cgint/dev /home/cgint/dev 2>/dev/null || true
-ln -sf /Users/cgint/dev-external /home/cgint/dev-external 2>/dev/null || true
-
-# sshd (only if running as root — optional)
-if [[ $(id -u) -eq 0 && -d /host-ssh ]]; then
-  # ... existing sshd setup, but authorized_keys at /home/cgint/.ssh/ ...
-  /usr/sbin/sshd
+# sshd (optional, non-root, port 2222)
+if [[ "${ENABLE_SSH:-false}" == "true" && -d /host-ssh ]]; then
+  SSH_KEY="$HERDR_STATE/ssh_host_ed25519_key"
+  [[ -f "$SSH_KEY" ]] || ssh-keygen -q -t ed25519 -N '' -f "$SSH_KEY"
+  # Install authorized_keys
+  mkdir -p /home/cgint/.ssh && chmod 700 /home/cgint/.ssh
+  : > /home/cgint/.ssh/authorized_keys
+  for pub in /host-ssh/id_*.pub; do
+    [[ -f "$pub" ]] && cat "$pub" >> /home/cgint/.ssh/authorized_keys
+  done
+  chmod 600 /home/cgint/.ssh/authorized_keys
+  /usr/sbin/sshd -f /opt/sshd_config -h "$SSH_KEY" -p 2222 &
+  echo "sshd started (non-root, port 2222)" >&2
 fi
 
 # herdr server (foreground)
@@ -125,13 +133,29 @@ If the switch breaks:
 4. `./herdr.sh up`
 
 ### Open decisions
-- **RW_DIRS paths:** mount at host paths (`/Users/cgint/dev/repo-a`) with a
-  symlink in the entrypoint, OR translate to container paths
-  (`/home/cgint/dev/repo-a`). Symlink approach keeps herdr.sh logic unchanged.
-- **sshd:** keep in-container (gated behind root check) or drop to a sidecar
-  container? For now: in-container, optional. If the user doesn't need
-  `herdr --remote`, sshd can be skipped entirely.
+- **RW_DIRS paths:** mount `~/dev` at `/home/cgint/dev:ro` (user home path, not host path).
+  RW_DIRS then use container paths: `RW_DIRS=/home/cgint/dev/repo-a`.
+  The ro parent + rw child nested mount handles the override.
+  No symlinks needed. herdr.sh expands `~` to the container home for RW_DIRS.
+- **sshd (confirmed feasible as non-root):** run sshd as cgint on port 2222
+  (unprivileged port, no CAP_NET_BIND_SERVICE needed). Host keys stored in
+  the named volume (persist across restarts). `UsePAM no`, `PermitRootLogin no`,
+  pubkey-only. Gated behind `ENABLE_SSH=true` env var. Port published as
+  `127.0.0.1:2222:2222` (loopback only). Entry:
+  ```sh
+  if [[ "${ENABLE_SSH:-false}" == "true" ]]; then
+    SSH_KEY="$HERDR_STATE/ssh_host_ed25519_key"
+    [[ -f "$SSH_KEY" ]] || ssh-keygen -q -t ed25519 -N '' -f "$SSH_KEY"
+    /usr/sbin/sshd -f "$HERDR_STATE/sshd_config" -h "$SSH_KEY" -p 2222 &
+  fi
+  ```
+  sshd_config: `Port 2222`, `UsePAM no`, `PasswordAuthentication no`,
+  `PubkeyAuthentication yes`, `PermitRootLogin no`,
+  `AuthorizedKeysFile /home/cgint/.ssh/authorized_keys`,
+  `HostKey <path>` (the volume-persisted key).
 - **Web entrypoint:** coordinate with the herdr-web agent (pane wJ:p2).
+  Same `--user 501:20` on the compose file. `HERDR_SOCKET_PATH` must point
+  to `/home/cgint/.config/herdr/herdr.sock`.
 
 ## Verified Findings
 

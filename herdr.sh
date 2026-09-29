@@ -30,6 +30,7 @@
 #   WORKDIR_REPO     repo to mount at /workspace/current-repo (default: $PWD)
 #   PROFILE          pi profile (default: minimal)
 #   OLLA_BASE_URL    local LLM gateway (default: http://host.docker.internal:40114)
+#   OLLA_PROVIDER_NAME provider name for the gateway (default: home-llm)
 #   RW_DIRS          colon-separated list of host dirs to mount rw
 #                    (overrides the ro ~/dev and ~/dev-external parents)
 #                    e.g. RW_DIRS=~/dev/repo-a:~/dev-external/repo-b
@@ -114,6 +115,7 @@ docker_up() {
     -e "PATH=/usr/local/bin:/usr/bin:/bin" \
     -e "GEMINI_API_KEY=${GEMINI_API_KEY:-}" \
     -e "OLLA_BASE_URL=${OLLA_BASE_URL:-http://host.docker.internal:40114}" \
+    -e "OLLA_PROVIDER_NAME=${OLLA_PROVIDER_NAME:-home-llm}" \
     pi-agent-herdr:node22
   echo "$C started (ssh port ${PORT})" >&2
 }

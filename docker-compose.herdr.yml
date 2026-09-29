@@ -1,21 +1,17 @@
 # Herdr-in-Docker: headless herdr server owning N pi-agent panes.
 #
-# The image (Dockerfile.herdr) provides pi + herdr + common CLI tools.
-# This compose file wires in the host state read-write:
-#   - ~/.pi (auth, settings, profiles, sessions)
-#   - herdr session state (session.json, session-history.json)
-#   - the current repo as a working directory
+# Single-instance workflow (the common case):
+#   ./herdr.sh up              # build + start
+#   ./herdr.sh attach          # TUI via docker exec
+#   ./herdr.sh down            # stop + remove
 #
-# The host is just a client — exec in:
-#   ./herdr.sh attach      # interactive herdr TUI inside the container
-#   ./herdr.sh agent-list  # socket API from inside the container
+# Multi-instance (N containers) is handled by herdr.sh via `docker run`
+# directly — see the script for details. This compose file is the
+# single-instance recipe.
 #
-# Herdr's session state (session.json, session-history.json, socket) is
-# stored in a Docker named volume (herdr-state). Unix domain sockets and
-# atomic file writes (rename) don't work on macOS bind mounts, so a named
-# volume is required. The volume survives container restarts; remove it with
-# `docker volume rm pi-agent-herdr-herdr-state` to reset herdr state.
-# Pi state (~/.pi) is read-write via bind mount.
+# Herdr's session state lives in a Docker named volume (unix sockets and
+# atomic file writes don't work on macOS bind mounts). Pi state (~/.pi)
+# is read-write via bind mount.
 
 name: pi-agent-herdr
 
@@ -26,35 +22,23 @@ services:
       dockerfile: Dockerfile.herdr
     image: pi-agent-herdr:node22
     container_name: pi-agent-herdr
-    command: ["herdr", "server"]
-    # Keep the pane tree alive when the container's main process detaches.
     tty: true
     init: true
+    ports:
+      - "2222:22"
     volumes:
-      # Pi state: auth.json, settings, profiles, sessions — read-write.
       - ${HOME}/.pi:/pi
-      # Herdr config — copied into this repo, not linked to host ~/.config/herdr.
-      - ./herdr-config.toml:/tmp/home/.config/herdr/config.toml:ro
-      # Herdr state — named volume (unix sockets + atomic writes don't work on
-      # macOS bind mounts). Survives container restarts.
-      - herdr-state:/tmp/home/.config/herdr
-      # The repo you want agents to work in. Override at invocation:
-      #   WORKDIR_REPO=/path/to/repo docker compose up --build
+      - ./herdr-config.toml:/opt/herdr-config.toml:ro
+      - herdr-state:/root/.config/herdr
       - ${WORKDIR_REPO:-.}:/workspace/current-repo
+      - ${HOME}/.ssh:/host-ssh:ro
     environment:
-      # Point pi at the mounted profile. Default is the host default profile;
-      # override with PROFILE=partner etc.
       - PI_CODING_AGENT_DIR=/pi/profiles/${PROFILE:-minimal}/agent
-      # Keep caches out of the mounted dirs.
       - UV_CACHE_DIR=/tmp/uv-cache
       - XDG_CACHE_HOME=/tmp/xdg-cache
       - XDG_DATA_HOME=/tmp/xdg-data
-      - HOME=/tmp/home
       - PATH=/usr/local/bin:/usr/bin:/bin
-      # Passthrough optional provider keys from host env.
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      # Local LLM gateway (ollama-bridge etc.) on the host — reachable from
-      # the container via host.docker.internal (Docker Desktop on Mac/Win).
       - OLLA_BASE_URL=${OLLA_BASE_URL:-http://host.docker.internal:40114}
 
 volumes:

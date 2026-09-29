@@ -30,6 +30,11 @@ services:
       - ${HOME}/.pi:/pi
       - ./herdr-config.toml:/opt/herdr-config.toml:ro
       - herdr-state:/root/.config/herdr
+      # Host dev directories (read-only, same path as host).
+      # Agents can browse sibling repos; the current repo is rw below.
+      - ${HOME}/dev:/Users/cgint/dev:ro
+      - ${HOME}/dev-external:/Users/cgint/dev-external:ro
+      # The current repo (read-write)
       - ${WORKDIR_REPO:-.}:/workspace/current-repo
       - ${HOME}/.ssh:/host-ssh:ro
     environment:

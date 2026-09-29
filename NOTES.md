@@ -27,93 +27,111 @@ under the user's home at their host paths.
   (`auth.json`, `models.json`). Keeping `~/.pi` mounted at a flat path
   (e.g. `/pi`) preserves these symlinks. Mounting only the profile dir
   breaks them (target `../../../agent/...` doesn't exist in the container).
+- Container PATH is `/usr/local/bin:/usr/bin:/bin` — `/usr/sbin` is NOT in it.
+  `runuser` lives at `/usr/sbin/runuser` and will NOT be found without full path.
 
-**Changes needed:**
+**Review consensus (3 sub-agent reviews, 2026-09-29):**
+
+The original plan (sshd as root + `runuser` in entrypoint + marker-file chown
++ SSH symlink) is sound but over-engineered. The minimal correct design:
+
+| Original plan | Revised approach | Why |
+|---|---|---|
+| `runuser -u cgint` in entrypoint | `--user 501:20` on `docker run` | No privilege transition in entrypoint; simpler |
+| Marker-file chown in entrypoint | One-time `docker run --user root alpine chown` | No per-start logic; volume is small |
+| SSH symlink `/root/.config/herdr` → `/home/cgint/...` | Not needed if sshd is optional (gate behind root check) | Eliminates the problem |
+| `runuser` full path fix | N/A (no runuser needed) | — |
+| RW_DIRS path translation | Mount at host paths + symlink in entrypoint | No translation logic |
+| `PI_CODING_AGENT_DIR` env | Can be dropped (HOME + mount at `$HOME/.pi` suffices) | Pi resolves naturally |
+
+**Revised changes needed:**
 
 ### 1. Dockerfile.herdr
 ```
 # Create cgint matching host UID 501, GID 20 (dialout in Debian)
 RUN useradd -u 501 -g 20 -m -s /bin/bash cgint
-# Do NOT set USER cgint here — entrypoint needs root for sshd + chown
+# No USER directive — --user on docker run handles this
 ```
-- Keep `USER root` (implicit default). The entrypoint drops to cgint via `runuser`.
-- No other Dockerfile changes. npm global bins are world-executable.
 
-### 2. herdr-entrypoint.sh (main)
+### 2. herdr.sh (docker run)
 ```
-# New: herdr state path
+docker run -d \
+  --user 501:20 \
+  -e "HOME=/home/cgint" \
+  -v "${HOME}/.pi:/home/cgint/.pi" \
+  -v "${HOME}/dev:/home/cgint/dev:ro" \
+  -v "${HOME}/dev-external:/home/cgint/dev-external:ro" \
+  -v "pi-agent-herdr_${VOL}:/home/cgint/.config/herdr" \
+  -v "${WORKDIR_REPO}:/workspace/current-repo" \
+  ...
+```
+- Drop `PI_CODING_AGENT_DIR` (or keep as safety net: `/home/cgint/.pi/profiles/${PROFILE}/agent`)
+- RW_DIRS: mount at host paths, add symlink in entrypoint
+
+### 3. herdr-entrypoint.sh (main)
+```
+#!/bin/bash
+set -euo pipefail
 HERDR_STATE=/home/cgint/.config/herdr
+mkdir -p "$HERDR_STATE"
+rm -f "$HERDR_STATE"/herdr.sock "$HERDR_STATE"/*.sock 2>/dev/null || true
 
-# New: chown volume on first run (marker file avoids re-chown on every start)
-if [[ ! -f "$HERDR_STATE/.owned-by-cgint" ]]; then
-  chown -R 501:20 "$HERDR_STATE"
-  touch "$HERDR_STATE/.owned-by-cgint"
-  chown 501:20 "$HERDR_STATE/.owned-by-cgint"
+# Config
+if [[ -f /opt/herdr-config.toml && ! -f "$HERDR_STATE/config.toml" ]]; then
+  cp /opt/herdr-config.toml "$HERDR_STATE/config.toml"
 fi
 
-# Changed: authorized_keys path
-mkdir -p /home/cgint/.ssh
-chmod 700 /home/cgint/.ssh
-# ... copy keys to /home/cgint/.ssh/authorized_keys ...
-chown -R 501:20 /home/cgint/.ssh
+# Home-path symlinks (so ~/dev, ~/dev-external work at host paths too)
+ln -sf /Users/cgint/dev /home/cgint/dev 2>/dev/null || true
+ln -sf /Users/cgint/dev-external /home/cgint/dev-external 2>/dev/null || true
 
-# sshd config: point to the new authorized_keys path
-# (or keep /root/.ssh if sshd runs as root and we put keys there)
+# sshd (only if running as root — optional)
+if [[ $(id -u) -eq 0 && -d /host-ssh ]]; then
+  # ... existing sshd setup, but authorized_keys at /home/cgint/.ssh/ ...
+  /usr/sbin/sshd
+fi
 
-# New: drop to cgint for herdr server
-exec runuser -u cgint -- herdr server "$@"
+# herdr server (foreground)
+exec herdr server "$@"
 ```
-- sshd still runs as root (port 22, host keys).
-- `runuser` is available in Debian trixie (from `util-linux`).
-- The chown is one-time (marker file). Subsequent starts skip it.
+- No `runuser`, no `chown`, no marker file
+- sshd gated behind root check (only runs if `--user 0`)
+- Entrypoint is ~20 lines, not 60
 
-### 3. herdr-entrypoint-web.sh (other agent's scope)
-- Same `runuser` change before `herdr server`.
-- Same `HERDR_STATE` path change.
-- Coordinate with the web agent before merging.
-
-### 4. herdr.sh (docker run flags)
+### 4. One-time volume migration (manual, documented)
 ```
-# Changed mounts:
--v "${HOME}/.pi:/home/cgint/.pi"              # was /pi
--v "${HOME}/dev:/home/cgint/dev:ro"           # was /Users/cgint/dev:ro
--v "${HOME}/dev-external:/home/cgint/dev-external:ro"
--v "pi-agent-herdr_${VOL}:/home/cgint/.config/herdr"  # was /root/.config/herdr
-
-# Changed env:
--e "HOME=/home/cgint"
--e "PI_CODING_AGENT_DIR=/home/cgint/.pi/profiles/${PROFILE}/agent"
+docker run --rm --user root -v pi-agent-herdr_herdr-state:/data alpine:3 \
+  sh -c 'chown -R 501:20 /data && rm -f /data/*.sock'
 ```
-- `RW_DIRS` paths: still mount at host paths, but those paths now need to be
-  under `/home/cgint/dev/...` for the ro parent to apply.
-  Or: keep host paths and add a symlink `/home/cgint/dev → /Users/cgint/dev`.
-  **Decision needed:** host paths vs user home paths for dev mounts.
+Run once before the first `./herdr.sh up` after the switch.
 
-### 5. docker-compose.herdr.yml (web mode)
-- Same mount + env changes as herdr.sh.
+### 5. herdr-entrypoint-web.sh (other agent's scope)
+- Same `--user` change on the compose file's `user:` field
+- No `runuser` needed (same approach)
+- `HERDR_SOCKET_PATH` in docker-compose.herdr-web.yml must point to
+  `/home/cgint/.config/herdr/herdr.sock`
 
-### 6. SSH (herdr --remote)
-- sshd runs as root, `PermitRootLogin prohibit-password` → login as root.
-- But the herdr server runs as cgint, socket at `/home/cgint/.config/herdr/herdr.sock`.
-- SSH session gets `HOME=/root` by default → herdr CLI looks for
-  `/root/.config/herdr/herdr.sock` → **mismatch**.
-- Fix: `UsePAM yes` + `UseShellEnvironment no` won't help.
-  Set `AcceptEnv HOME` in sshd_config + client sends `HOME=/home/cgint`.
-  Or: create `/root/.config/herdr` as a symlink to `/home/cgint/.config/herdr`.
-  Or: change `PermitRootLogin` to `no`, force login as cgint only.
-  **Simplest:** symlink. `ln -s /home/cgint/.config/herdr /root/.config/herdr`
-  in the entrypoint.
+### 6. session.json migration
+- `session.json` has `"cwd": "/root"`. After the switch, herdr starts with
+  HOME=/home/cgint. The first pane will have a broken cwd.
+- **Decision:** accept it (user creates a new workspace) OR sed the migration
+  script to update `session.json` (`s|"cwd": "/root"|"cwd": "/home/cgint"|`).
 
-### Risks / open questions
-- **RW_DIRS with host paths:** if `~/dev` is mounted at `/home/cgint/dev:ro`,
-  then `RW_DIRS=~/dev/repo-a` needs to be `/home/cgint/dev/repo-a` inside
-  the container. The herdr.sh `docker run` would need to translate host paths
-  to container paths. Or: mount at host paths AND add symlinks in the user home.
-- **Volume migration:** existing volume has root-owned files. The one-time
-  chown handles this, but if the volume grows large (many session snapshots),
-  the chown takes time on first run after the switch.
-- **Web entrypoint:** must be updated in lockstep. Coordinate with the
-  herdr-web agent (pane wJ:p2).
+### 7. Rollback procedure
+If the switch breaks:
+1. `docker rm -f pi-agent-herdr`
+2. `docker run --rm --user root -v pi-agent-herdr_herdr-state:/data alpine:3 sh -c 'chown -R 0:0 /data && rm /data/.owned-by-cgint'`
+3. Revert herdr.sh (remove `--user`, restore old mount paths)
+4. `./herdr.sh up`
+
+### Open decisions
+- **RW_DIRS paths:** mount at host paths (`/Users/cgint/dev/repo-a`) with a
+  symlink in the entrypoint, OR translate to container paths
+  (`/home/cgint/dev/repo-a`). Symlink approach keeps herdr.sh logic unchanged.
+- **sshd:** keep in-container (gated behind root check) or drop to a sidecar
+  container? For now: in-container, optional. If the user doesn't need
+  `herdr --remote`, sshd can be skipped entirely.
+- **Web entrypoint:** coordinate with the herdr-web agent (pane wJ:p2).
 
 ## Verified Findings
 

@@ -19,6 +19,9 @@ if [[ -d /tmp/home/.config/herdr && ! -f "$HERDR_STATE/session.json" ]]; then
 fi
 mkdir -p "$HERDR_STATE"
 
+# Remove stale sockets from a previous container (the named volume persists).
+rm -f "$HERDR_STATE"/herdr.sock "$HERDR_STATE"/*.sock 2>/dev/null || true
+
 # Install the herdr config from the repo (mounted read-only at
 # /opt/herdr-config.toml). Only if the volume doesn't already have one.
 if [[ -f /opt/herdr-config.toml && ! -f "$HERDR_STATE/config.toml" ]]; then

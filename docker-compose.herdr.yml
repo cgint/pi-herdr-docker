@@ -10,10 +10,12 @@
 #   ./herdr.sh attach      # interactive herdr TUI inside the container
 #   ./herdr.sh agent-list  # socket API from inside the container
 #
-# Herdr's session.json and session-history.json are bind-mounted from
-# ./herdr-state/ so workspace/pane topology survives container restarts.
-# The unix socket and other herdr runtime state stay container-local
-# (sockets don't work on macOS bind mounts). Pi state (~/.pi) is read-write.
+# Herdr's session state (session.json, session-history.json, socket) is
+# stored in a Docker named volume (herdr-state). Unix domain sockets and
+# atomic file writes (rename) don't work on macOS bind mounts, so a named
+# volume is required. The volume survives container restarts; remove it with
+# `docker volume rm pi-agent-herdr-herdr-state` to reset herdr state.
+# Pi state (~/.pi) is read-write via bind mount.
 
 name: pi-agent-herdr
 
@@ -33,10 +35,9 @@ services:
       - ${HOME}/.pi:/pi
       # Herdr config — copied into this repo, not linked to host ~/.config/herdr.
       - ./herdr-config.toml:/tmp/home/.config/herdr/config.toml:ro
-      # Herdr session state — bind-mounted from ./herdr-state/ (regular files,
-      # not sockets, so they work on macOS). Created on first run.
-      - ./herdr-state/session.json:/tmp/home/.config/herdr/session.json
-      - ./herdr-state/session-history.json:/tmp/home/.config/herdr/session-history.json
+      # Herdr state — named volume (unix sockets + atomic writes don't work on
+      # macOS bind mounts). Survives container restarts.
+      - herdr-state:/tmp/home/.config/herdr
       # The repo you want agents to work in. Override at invocation:
       #   WORKDIR_REPO=/path/to/repo docker compose up --build
       - ${WORKDIR_REPO:-.}:/workspace/current-repo
@@ -55,3 +56,6 @@ services:
       # Local LLM gateway (ollama-bridge etc.) on the host — reachable from
       # the container via host.docker.internal (Docker Desktop on Mac/Win).
       - OLLA_BASE_URL=${OLLA_BASE_URL:-http://host.docker.internal:40114}
+
+volumes:
+  herdr-state:

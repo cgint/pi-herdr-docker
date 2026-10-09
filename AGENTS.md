@@ -84,8 +84,9 @@ blocked, report **not persisted**.
    resolution. These are the facts most likely to cause a future session
    to waste time re-discovering.
 4. Check `git status` and the "Current state" section below before assuming
-   what is committed. This repo is public (MIT licensed) — treat
-   uncommitted changes as potentially publishable.
+   what is committed. This repo is **public on GitHub**
+   (`github.com/cgint/pi-herdr-docker`, MIT licensed) — treat uncommitted
+   changes as potentially publishable.
 
 ## Key constraints (do not rediscover)
 
@@ -103,8 +104,10 @@ blocked, report **not persisted**.
 
 ## Current state (2026-10-09)
 
-- Repo is **public-ready**: MIT licensed, security scan clean
-  (gitleaks: 0 leaks across full history; trivy: 0 vulns).
+- Repo is **public on GitHub**: `github.com/cgint/pi-herdr-docker` (MIT
+  licensed, security scan clean: gitleaks 0 leaks across full history,
+  trivy 0 vulns). Note: the GitHub slug is `pi-herdr-docker` while the
+  local directory / original project name is `pi-agent-docker`.
 - Herdr container workflow **works**: build, start, workspace create,
   agent start (pi), prompt round-trip, state persistence across
   down/up — all verified end-to-end.

@@ -1,0 +1,9 @@
+# Keep the pinned herdr-web build context IN the build context; exclude everything
+# else heavy/local from server-only and web builds alike.
+!build-context
+!build-context/**
+vendor/
+node_modules/
+.git/
+dist-packages/
+*.log

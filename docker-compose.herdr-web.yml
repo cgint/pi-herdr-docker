@@ -1,0 +1,54 @@
+# Herdr web UI container — ADDITIVE companion to docker-compose.herdr.yml (untouched).
+# Same project (pi-agent-herdr) and the SAME named volume herdr-state, so the browser UI
+# and ./herdr.sh attach drive the exact same herdr server state (HOME=/root default,
+# socket /root/.config/herdr/herdr.sock). Only ONE of the two services may run at a time:
+# they share the volume and would race on the herdr server.
+#
+# Usage (wrapper preferred):  ./herdr.sh up-web | web-url | web-log | attach-web
+# Manual:  docker compose -f docker-compose.herdr-web.yml up -d --build
+# Browser: http://127.0.0.1:8787/
+#
+# SECURITY: the herdr-web bridge has NO user authentication (v0.6.1 web_bridge.rs warns
+# "no browser authentication yet"). Host binding is 127.0.0.1 only — do not widen it:
+# web access == shell access into pi panes.
+
+name: pi-agent-herdr
+
+services:
+  herdr-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.herdr-web
+      args:
+        BASE_IMAGE: pi-agent-herdr:node22
+    image: pi-agent-herdr-web:node22
+    container_name: pi-agent-herdr-web
+    tty: true
+    init: true
+    ports:
+      - "127.0.0.1:8787:8787"   # web UI, loopback-only
+      - "2223:22"                # ssh (herdr --remote), distinct from server's 2222
+    volumes:
+      - ${HOME}/.pi:/pi
+      - ./herdr-config.toml:/opt/herdr-config.toml:ro
+      - herdr-state:/root/.config/herdr
+      - ${WORKDIR_REPO:-.}:/workspace/current-repo
+      - ${HOME}/.ssh:/host-ssh:ro
+    environment:
+      - PI_CODING_AGENT_DIR=/pi/profiles/${PROFILE:-minimal}/agent
+      - UV_CACHE_DIR=/tmp/uv-cache
+      - XDG_CACHE_HOME=/tmp/xdg-cache
+      - XDG_DATA_HOME=/tmp/xdg-data
+      - PATH=/usr/local/bin:/usr/bin:/bin
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OLLA_BASE_URL=${OLLA_BASE_URL:-http://host.docker.internal:40114}
+      # web supervision (entrypoint dispatch; HERDR_WEB=false => plain server-only behavior)
+      - HERDR_WEB=true
+      - WEB_PORT=8787
+      - WEB_STATIC_DIR=/opt/herdr-web/web
+      # bridge socket discovery (pinned v0.6.1 bridge/src/session.rs): explicit path wins
+      # over the sessions/<name>/herdr.sock default; must equal the server's socket path
+      - HERDR_SOCKET_PATH=/root/.config/herdr/herdr.sock
+
+volumes:
+  herdr-state:

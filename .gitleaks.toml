@@ -1,0 +1,8 @@
+# Gitleaks configuration — extends the default rules.
+#
+# This repo intentionally references env-var *names* (GEMINI_API_KEY, OLLA_BASE_URL,
+# HERDR_*) in scripts and docs; those are pass-throughs, never hardcoded values.
+# No allowlists are needed as of this writing.
+
+[extend]
+useDefault = true

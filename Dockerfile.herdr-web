@@ -1,0 +1,82 @@
+# herdr web UI (browser client) stacked ON TOP of the existing server image — the existing
+# Dockerfile.herdr / docker-compose.herdr.yml / herdr-entrypoint.sh are NOT modified. This
+# file only ADDS layers on top of the built server image:
+#
+#   1. bridge-builder (rust:1-slim, native arch): compiles herdr-web-bridge from the pinned
+#      herdr-web source tarball (no network clone at build time; tarball pre-fetched under
+#      build-context/, SHA256-pinned below), vendored herdr-compat included;
+#   2. web-builder   (node:22):        npm ci --ignore-scripts && npm run build:web  -> dist;
+#   3. final         FROM the server image: drops the bridge binary + static UI in and swaps
+#      ENTRYPOINT to the additive supervisor herdr-entrypoint-web.sh, which replicates the
+#      original sshd bootstrap and `herdr server` lifecycle 1:1, plus an optional supervised
+#      herdr-web-bridge started BEFORE the server and kept up for its whole lifetime.
+#      Runtime flag HERDR_WEB=false restores the exact server-only behavior (no bridge).
+#
+# Why build instead of copy the release binary: upstream ships linux-x86_64 + macOS only,
+# no linux-arm64 bridge — on Apple Silicon we build natively, no qemu emulation.
+#
+# Build (this repo):
+#   docker build -f Dockerfile.herdr -t pi-agent-herdr:node22 .          # existing, untouched
+#   docker build -f Dockerfile.herdr-web -t pi-agent-herdr-web:node22 \
+#     --build-arg BASE_IMAGE=pi-agent-herdr:node22 .
+# Run:  ./herdr.sh up-web   then open  http://127.0.0.1:8787/
+#
+# Pinning: HERDR_WEB_REF must be a full commit SHA (the tarball is that exact tree).
+# v0.6.1 == e9e01f9ad39e06f44bea2efc5ef5f78c80f91823 (terminal protocol 22 <-> herdr 0.9.x).
+# When bumping: re-download build-context/herdr-web-src/herdr-web-<short>.tar.gz AND update
+# both the filename and the sha256sum below.
+
+ARG BASE_IMAGE=pi-agent-herdr:node22
+
+# --- stage 1: bridge builder (native build of the pinned source tree) ---
+FROM rust:1-slim AS bridge-builder
+ARG HERDR_WEB_REF=e9e01f9ad39e06f44bea2efc5ef5f78c80f91823
+WORKDIR /build
+COPY build-context/herdr-web-src/herdr-web-e9e01f9.tar.gz /tmp/herdr-web.tar.gz
+RUN set -eux; \
+    echo "2beb261c249bf36025504051215b6a2d409fa9f4efe196e9a42e9328858280c4  /tmp/herdr-web.tar.gz" | sha256sum -c -; \
+    tar xzf /tmp/herdr-web.tar.gz; \
+    mv "herdr-web-${HERDR_WEB_REF}" src; \
+    cargo build --release --manifest-path /build/src/bridge/Cargo.toml --bin herdr-web-bridge; \
+    /build/src/bridge/target/release/herdr-web-bridge --help >/dev/null
+
+# --- stage 2: web ui builder (React/vite -> web/dist) ---
+FROM node:22-trixie AS web-builder
+ARG HERDR_WEB_REF=e9e01f9ad39e06f44bea2efc5ef5f78c80f91823
+WORKDIR /build
+COPY build-context/herdr-web-src/herdr-web-e9e01f9.tar.gz /tmp/herdr-web.tar.gz
+RUN set -eux; \
+    tar xzf /tmp/herdr-web.tar.gz; \
+    mv "herdr-web-${HERDR_WEB_REF}" src; \
+    cd /build/src; \
+    npm ci --ignore-scripts; \
+    cd /build/src/web; \
+    npm ci --ignore-scripts; \
+    # `npm run build` = tsc -b && vite build. tsc type-checks test files, whose
+    # vitest/@testing-library deps are not in web/package-lock.json (upstream runs
+    # them from the root install); they are noEmit-only, so run the bundler directly.
+    # Same artifact as upstream's vite build step.
+    ./node_modules/.bin/vite build; \
+    test -f /build/src/web/dist/index.html
+
+# --- final stage: ON TOP of the untouched server image ---
+FROM ${BASE_IMAGE} AS herdr-web
+
+ARG HERDR_WEB_REF=e9e01f9ad39e06f44bea2efc5ef5f78c80f91823
+ENV WEB_PORT=8787 \
+    WEB_STATIC_DIR=/opt/herdr-web/web \
+    HERDR_WEB=true
+
+COPY herdr-entrypoint-web.sh /usr/local/bin/herdr-entrypoint-web.sh
+RUN chmod +x /usr/local/bin/herdr-entrypoint-web.sh
+COPY --from=bridge-builder /build/src/bridge/target/release/herdr-web-bridge /usr/local/bin/herdr-web-bridge
+COPY --from=web-builder /build/src/web/dist /opt/herdr-web/web
+
+# smoke: bridge runs, static UI present, supervisor executable
+RUN set -eux; \
+    /usr/local/bin/herdr-web-bridge --help >/dev/null; \
+    test -f /opt/herdr-web/web/index.html; \
+    test -x /usr/local/bin/herdr-entrypoint-web.sh; \
+    herdr --version
+
+ENTRYPOINT ["herdr-entrypoint-web.sh"]

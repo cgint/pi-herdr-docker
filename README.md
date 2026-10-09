@@ -99,7 +99,9 @@ docker compose -f docker-compose.herdr.yml exec herdr \
 ### State persistence
 
 - **Pi state** (`~/.pi`): bind-mounted read-write. Sessions, auth, model
-  config persist on the host.
+  config persist on the host. Note: this mounts your **entire** `~/.pi`
+  directory into the container — anything in it (auth tokens, session
+  history, profile configs) is readable by the container process.
 - **Herdr state** (workspaces, panes, layout): stored in a Docker named
   volume (`pi-agent-herdr_herdr-state`). Survives `./herdr.sh down && up`.
   Reset with `docker volume rm pi-agent-herdr_herdr-state`.
@@ -144,3 +146,12 @@ on your host terminal, attached to the container's herdr server. Detach with
 | `PROFILE` | `minimal` | Pi profile (under `~/.pi/profiles/`) |
 | `OLLA_BASE_URL` | `http://host.docker.internal:40114` | Local LLM gateway |
 | `GEMINI_API_KEY` | _(empty)_ | Pass through from host env |
+
+### Note: host-specific mount paths
+
+`herdr.sh` mounts `~/dev` and `~/dev-external` at fixed in-container paths
+(`/Users/cgint/dev`, `/Users/cgint/dev-external`) — these reflect the
+author's macOS setup and are part of a work-in-progress migration to run
+the container as a named user (see `NOTES.md` → "User Switch Plan"). If
+your username differs, either adjust those two `-v` flags in `herdr.sh`
+or rely on `RW_DIRS=...` for the directories you need writable.

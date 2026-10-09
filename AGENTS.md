@@ -83,8 +83,9 @@ blocked, report **not persisted**.
    filesystem limitations (sockets, atomic writes) and pi extension
    resolution. These are the facts most likely to cause a future session
    to waste time re-discovering.
-4. Check `git status` — the repo has uncommitted files (.gitignore, README.md,
-   AGENTS.md, NOTES.md, herdr.sh, docker-compose.herdr.yml). **Not yet committed.**
+4. Check `git status` and the "Current state" section below before assuming
+   what is committed. This repo is public (MIT licensed) — treat
+   uncommitted changes as potentially publishable.
 
 ## Key constraints (do not rediscover)
 
@@ -100,25 +101,37 @@ blocked, report **not persisted**.
 - **`./herdr.sh down`** is the correct shutdown (SIGTERM → clean socket
   cleanup). `herdr server stop` (API) kills the container.
 
-## Current state (2026-09-29)
+## Current state (2026-10-09)
 
+- Repo is **public-ready**: MIT licensed, security scan clean
+  (gitleaks: 0 leaks across full history; trivy: 0 vulns).
 - Herdr container workflow **works**: build, start, workspace create,
   agent start (pi), prompt round-trip, state persistence across
   down/up — all verified end-to-end.
+- **Herdr-web bridge is implemented**: `Dockerfile.herdr-web` +
+  `herdr-entrypoint-web.sh` + `docker-compose.herdr-web.yml`, built on
+  top of the server image (additive; `HERDR_WEB=false` restores
+  server-only behavior). Source pinned via
+  `build-context/herdr-web-src/herdr-web-e9e01f9.tar.gz` (SHA256-pinned,
+  MIT-licensed upstream).
 - Pi version in image: 0.87.1 (from `@latest` at build time).
 - Herdr version: 0.9.1 (pinned, sha256-checked).
-- **Not yet done:** git commit, README herdr section (now done in
-  README.md), herdr-web bridge (planned, see `docs/`).
-- **Open:** pi version pinning (currently `@latest`), local LLM reachability
-  (ollama gateway untested from container), `session-history.json` secrets
-  risk (pane_history=true).
+- **User Switch Plan (WIP, see `NOTES.md`):** container currently runs as
+  root; the plan to run as a named user (host UID/GID) is documented but
+  not yet implemented. `herdr.sh` already uses `/Users/cgint/...`
+  container mount paths as a stepping stone; `docker-compose.herdr.yml`
+  still uses the old `/root/...` paths — the two are inconsistent until
+  the plan lands.
+- **Open:** pi version pinning (currently `@latest`), local LLM
+  reachability (ollama gateway untested from container),
+  `session-history.json` secrets risk (pane_history=true).
 
 ## Open questions / next steps
 
-1. **Git commit** the new herdr files.
+1. **Finish the User Switch Plan** (`NOTES.md`) — switch container from
+   root to named user; reconcile `herdr.sh` and `docker-compose.herdr.yml`
+   mount paths in the same change.
 2. **Pin pi version** in Dockerfile.herdr (currently `@latest`).
-3. **Herdr-web bridge** — see `docs/herdr-web-ui-on-top.md` for the plan.
-   First gate: confirm bridge CLI flags (arm64 binary unavailable).
-4. **Local LLM** — test `OLLA_BASE_URL` reachability from container when
+3. **Local LLM** — test `OLLA_BASE_URL` reachability from container when
    the gateway is running.
-5. **Multi-container** — one herdr container per repo, for parallel work.
+4. **Multi-container** — one herdr container per repo, for parallel work.

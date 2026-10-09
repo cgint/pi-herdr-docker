@@ -1,6 +1,21 @@
 # herdr-web-ui on top of Dockerfile.herdr
 
-Status: **planned, not implemented** (reviewed via criticalthink + external advisor, 2026-09-29).
+Status: **IMPLEMENTED 2026-09-29** as an ADDITIVE companion (existing container definition
+untouched): `Dockerfile.herdr-web` (stacks `FROM pi-agent-herdr:node22`; builds the bridge
+natively for arm64 from the pinned v0.6.1 tarball + vite UI), `docker-compose.herdr-web.yml`
+(shares the `herdr-state` volume; loopback-only `127.0.0.1:8787`), `herdr-entrypoint-web.sh`
+(supervised: server first, then bridge gated on the socket; HERDR_WEB=false restores plain
+server behavior), and `./herdr.sh up-web|web-url|web-log|attach-web`. Verified live: HTTP 200
+UI, `/api/snapshot` sees panes, `pane run` output visible, `agent start --kind pi` + prompt
+round-trip answered. Two deviations from this plan, both deliberate: (1) order is
+server->bridge because the v0.6.1 bridge hard-fails when the daemon socket is absent at
+startup (`startup_daemon_status` probes before binding) — the bridge still stays up for the
+server's whole lifetime; (2) `--allow-host` values must be bare hostnames (no ports) per
+v0.6.1 `normalize_allowed_host`, so loopback Host entries are covered by the bridge's builtin
+loopback allowance and an optional `WEB_ALLOW_HOST` passthrough handles a custom DNS name.
+Original review trail: (reviewed via criticalthink + external advisor; claims
+cross-checked via doc-rocker MCP through `npx mcporter` by independent worker Konrad,
+2026-09-29 — see "Cross-check results" at the bottom).
 Base artifacts: `Dockerfile.herdr` (→ `pi-agent-herdr:node22`), `docker-compose.herdr.yml`,
 `herdr.sh`, `herdr-entrypoint.sh`.
 
@@ -16,7 +31,7 @@ volumes: ~/.pi (bind, rw) · repo (bind, rw) · herdr-state (named volume)
 ```
 
 Web UI = `kcosr/herdr-web` (React client + Rust `herdr-web-bridge`), the same bundle already
-proven on pluto (`pluto:/home/cgint/herdr-web`, v0.5.0 compose recipe).
+proven on a Linux host (`/home/cgint/herdr-web`, v0.5.0 compose recipe).
 
 ## Architecture decision (post-review): single container, two supervised processes
 
@@ -93,8 +108,11 @@ pluto `state/` dir) lands on the state volume.
 
 ## Security
 
-- Publish `127.0.0.1:8787:8787` only. The bridge has **no user authentication**; Host/Origin
-  checks are DNS-rebinding/CSRF mitigation, not auth. **Web access = shell access into pi panes.**
+- Publish `127.0.0.1:8787:8787` only. The bridge has **no user authentication** (verified at
+  `web_bridge.rs:985` on upstream main: "herdr-web-bridge has no browser authentication yet;
+  bind only on trusted networks"; README: Host/Origin checks are "a DNS-rebinding/CSRF guard,
+  not user authentication"). **Web access = shell access into pi panes.** Bridge-owned notes
+  are readable/mutable by any allowed client — no sensitive notes on a LAN-bound bridge.
 - Phone/LAN access: bind/publish via the **Tailscale interface IP explicitly** (or put an auth'd
   TLS gateway in front). Never `0.0.0.0` on a public interface.
 
@@ -130,6 +148,10 @@ pluto `state/` dir) lands on the state volume.
 3. **`herdr integration install pi` durability:** writes into the herdr state dir (profile
    extension) — must land on the named volume; bake at build time into a skel dir + entrypoint
    copy, or run once via `herdr.sh exec`. Verify pane lifecycle state appears in the web sidebar.
+   Cross-check caveat: lifecycle state (working/idle/blocked) is confirmed, but **"native session
+   restore for pi panes" is not confirmed by sourced docs** — doc-rocker found sources denying
+   it; herdr 0.9.2's agent self-reported resume commands may change this. Treat pi session
+   continuity as riding on pi's own `~/.pi` session files, not on herdr restore.
 
 ## Implementation gates (ordered)
 
@@ -142,6 +164,29 @@ pluto `state/` dir) lands on the state volume.
 5. Loopback hold: `curl <Mac-LAN-ip>:8787` from another box fails.
 6. `docker compose down && up` → workspaces/plugins/integration survive via the state volume
    (panes legitimately gone; agents restartable).
+
+## Cross-check results (doc-rocker MCP via npx mcporter, worker Konrad, 2026-09-29)
+
+MCP discovery: ad-hoc inline-URL mode — `npx mcporter call 'https://doc-rocker.com/api/mcp'
+<tool> k=v ...`. Real endpoint is `POST /api/mcp` (root and `/mcp` 404/406). Tools:
+`search_documentation(query, domains[])` (AI-combined web search; **rate limit 2/min, 30/day per
+egress IP**; the `youshallnotpass` bypass header applies only to `api_chat`/`api_rock`, verified
+in `rate_limiter.ex`), `list_documentation_sources()`.
+
+| Claim | Verdict | Basis |
+|---|---|---|
+| C1 protocol 22 pairing | CONFIRMED | host `herdr status server` → `private_protocol: 22`; upstream README + vendored README. An interim doc-rocker "protocol 8" contradiction was a **combiner artifact** (misattributed a v0.5.12-era changelog line to 0.9.1); primary changelog has no 0.9.1 protocol bump |
+| C2 no linux-arm64 bridge | CONFIRMED | upstream README platform list: linux-x86_64 + macOS only; herdr itself does ship linux-aarch64 |
+| C3 HERDR_CONFIG_DIR not honored | CONFIRMED | doc-rocker: undocumented/unrecognized, state under HOME; corroborated by NOTES.md |
+| C4 bridge never spawns herdr CLI | UNDETERMINED (doc-rocker) | no corpus; plan's upstream-source grep stands as the evidence |
+| C5 no bridge auth | CONFIRMED | doc-rocker's CONTRADICTED verdict (`--auth` flag with form/local/auto/native modes) did **not reproduce**: zero `auth` hits in v0.6.1 bridge sources; upstream main says explicitly "no browser authentication yet" (web_bridge.rs:985). Rejected as combiner hallucination/version-confusion |
+| C6 tmux-like server owns PTYs | CONFIRMED | doc-rocker + host `herdr status` (socket under sessions dir) |
+| C7 pi integration | CONFIRMED, one clause downgraded | `integration install pi` + lifecycle states confirmed; **"native session restore for pi panes" unsupported** — amended above |
+| C8 unix sockets on macOS bind mounts | CONFIRMED | Docker forums 142653 / desktop-feedback#279 via doc-rocker; named volumes = reliable; in-container socket = valid alternative (our choice) |
+
+**Method warning learned:** doc-rocker answers are AI-combined web search (lite model) with
+citation links; it fabricated a flag surface and misattributed changelog lines. For
+version-specific claims, fetch primary text (raw GitHub) — done for every contested verdict.
 
 ## Out of scope / non-goals
 

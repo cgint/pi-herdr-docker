@@ -1,12 +1,25 @@
-# pi-agent-docker
+# pi-herdr-docker
 
-Docker images for running `pi` (coding agent) with common CLI tools.
+Docker recipes for running [`pi`](https://pi.dev) (a coding
+agent) in containers on macOS, pre-packaged with the tools it needs.
 
-Two workflows:
+**Why:** running a coding agent on your host means it executes untrusted code,
+installs dependencies, and leaves state behind. These recipes move all of that
+into a throwaway container: your host stays clean, the agent gets a full
+environment (Node 22, git, ripgrep, uv, d2, ...), and your workspace is
+mounted in read-only by default — you opt in to writable directories
+explicitly.
 
-1. **Single pi in a container** (`run.sh`) — the original, for quick one-off pi sessions.
-2. **Herdr + N pi agents** (`herdr.sh`) — a headless herdr server in a container
-   owning multiple pi agent panes, with persistent herdr state.
+**Two workflows:**
+
+1. **Single pi, one-off session** (`run.sh`) — spin up one agent in a repo,
+   work, discard the container. For quick tasks.
+2. **Herdr + N pi agents** (`herdr.sh`) — a headless herdr server owning
+   multiple persistent agent panes (tmux-like): attach/detach from the host
+   terminal or a local web UI, state survives restarts. For parallel, ongoing
+   work.
+
+---
 
 ## Tools included (both images)
 

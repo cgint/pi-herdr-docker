@@ -33,7 +33,8 @@ No "pinching through docker" — `./herdr.sh attach` gets you to the TUI.
 | `herdr-config.toml` | Herdr UI prefs (mounted read-only into container) |
 | `README.md` | User-facing docs (both workflows) |
 | `NOTES.md` | Verified findings, rejected approaches, future ideas |
-| `docs/herdr-web-ui-on-top.md` | **Planned** herdr-web bridge architecture |
+| `docs/herdr-web-ui-on-top.md` | herdr-web bridge architecture (implemented 2026-09-29) |
+| `docs/remote-api-over-ssh.md` | Remote herdr API via SSH (agent-control surface the web bridge lacks) |
 | `agent/` | Agent-internal handoff briefs (private, not repo memory) |
 | `vendor/` | Bundled binaries (herdr-web x86_64, ignored by git) |
 

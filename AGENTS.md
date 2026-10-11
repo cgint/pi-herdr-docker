@@ -1,5 +1,17 @@
 # AGENTS.md — pi-agent-docker
 
+## Keep the Why
+
+This project records the reasoning behind its code with the Keep the Why
+skill (https://keepthewhy.com) — the `.keep-the-why` file at the project
+root is its config. Before doing anything else in a session, whatever the
+first request is about, load the skill: in Pi, invoke the `keep-the-why`
+skill (it is installed via `pi install npm:keep-the-why`); if it is not
+installed in this environment, say so and ask before installing; in any
+other agent, read the installed `keep-the-why/SKILL.md` (e.g. under
+`~/.pi/agent/skills/keep-the-why/`) and follow it, including the
+`references/*.md` files it points to for the situation at hand.
+
 ## Purpose
 
 Docker recipes for running `pi` (coding agent) and `herdr` (tmux-like pane

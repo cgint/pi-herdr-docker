@@ -1,3 +1,5 @@
+[![Keep the Why](https://keepthewhy.com/assets/badge.svg)](https://keepthewhy.com)
+
 # pi-herdr-docker
 
 Docker recipes for running [`pi`](https://pi.dev) (a coding

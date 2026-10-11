@@ -22,8 +22,8 @@ Both Dockerfiles use `node:22-trixie` as the base image.
 **Id:** 70d5ccfa-fcdd-4d37-9185-0336e6730434
 **Type:** decision
 **Status:** open
-**Evidence:** inferred
-**Source:** commit 88d8d66, user switch plan in `NOTES.md`
+**Evidence:** confirmed
+**Source:** commit 88d8d66, user switch plan in `NOTES.md`; confirmed by the maintainer in this session, 2026-10-10
 **Revisit when:** the user switch plan lands, or the plan is abandoned
 
 The container runs as root (UID 0, GID 0). A documented plan exists to run it as a named user matching the host UID/GID so files written into mounted directories are owned correctly, but it has not been implemented.

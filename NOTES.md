@@ -157,6 +157,59 @@ If the switch breaks:
   Same `--user 501:20` on the compose file. `HERDR_SOCKET_PATH` must point
   to `/home/cgint/.config/herdr/herdr.sock`.
 
+### Portability addendum (2026-10-10)
+
+The plan above hardcodes UID 501 / GID 20 / `/Users/cgint` — this host only.
+To run the switch on **any machine** (different UID, Linux host, non-standard
+home), apply the following on top:
+
+**1. Auto-discover UID/GID at launch, not build time** (`herdr.sh`):
+```bash
+HOST_UID="${HOST_UID:-$(id -u)}"
+HOST_GID="${HOST_GID:-$(id -g)}"
+```
+Pass to the container: `--user "${HOST_UID}:${HOST_GID}"`. The `useradd -u 501`
+in the Dockerfile becomes a placeholder (GID 20 / `dialout` stays fixed by the
+image; on a Linux host with a different host GID, the numeric GID is what the
+kernel uses — no `/etc/group` entry is required for file ownership).
+
+**2. Remove hardcoded host paths** — two literal spots:
+- `herdr.sh` lines 106–107: `-v ${HOME}/dev:/Users/cgint/dev:ro` → `-v ${HOME}/dev:/home/cgint/dev:ro`
+- `docker-compose.herdr.yml` lines 35–36: same change
+
+Container-side paths stay fixed at `/home/cgint/...`; only the host side uses `${HOME}`.
+
+**3. `host.docker.internal` on Linux** — Docker Desktop (macOS/Windows) provides it
+natively. Linux Docker Engine needs it explicitly:
+- `docker run`: add `--add-host=host.docker.internal:host-gateway`
+- compose files: add `extra_hosts: ["host.docker.internal:host-gateway"]`
+
+Already in place: `OLLA_BASE_URL` defaults to `http://host.docker.internal:40114`
+(`herdr.sh` line 117, both compose files).
+
+**4. Env-var overrides** — `SSH_PORT` (default 2222) and `WEB_PORT` (default 8787)
+should be overridable from the environment; `WEB_PORT` already is (in
+`herdr-entrypoint-web.sh`), `SSH_PORT` is not yet.
+
+**5. Optional per-host `.env` / `.env.local`** — source it at the top of
+`herdr.sh` so per-host tweaks (UID, GID, ports) need no code change.
+
+**Done criteria (portability):**
+- No `/Users/cgint` or bare `501` in `herdr.sh`, `docker-compose.herdr.yml`,
+  `docker-compose.herdr-web.yml`
+- `./herdr.sh exec id` prints the host's actual UID/GID (verified on a non-501 host)
+- `./herdr.sh up` works on a Linux host with no code changes
+
+**Known cosmetic issue (non-blocking):** on a host with UID ≠ 501, the
+container's `/etc/passwd` has no entry for the runtime UID. `getpwuid()`
+tools inside print the numeric ID. The placeholder `useradd -u 501` (Option A)
+keeps a sane name for the common case; the `--user` flag overrides ownership.
+
+**Open sub-decisions (unchanged, orthogonal to portability):**
+1. `session.json` cwd (`"/root"` → `"/home/cgint"`) — sed during migration,
+   or accept a broken first pane?
+2. `PI_CODING_AGENT_DIR` — drop (HOME + mount suffice), or keep as safety net?
+
 ## Verified Findings
 
 ### macOS Docker Desktop filesystem limitations

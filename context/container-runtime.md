@@ -26,7 +26,7 @@ Both Dockerfiles use `node:22-trixie` as the base image.
 **Source:** commit 88d8d66, user switch plan in `NOTES.md`; confirmed by the maintainer in this session, 2026-10-10
 **Revisit when:** the user switch plan lands, or the plan is abandoned
 
-The container runs as root (UID 0, GID 0). A documented plan exists to run it as a named user matching the host UID/GID so files written into mounted directories are owned correctly, but it has not been implemented.
+The container runs as root (UID 0, GID 0). A documented plan exists to run it as a named user matching the host UID/GID so files written into mounted directories are owned correctly, but it has not been implemented. The plan includes a **portability addendum** (2026-10-10): auto-discover the host UID/GID at launch (`$(id -u)` / `$(id -g)`), remove hardcoded `/Users/cgint` mount paths, add `host.docker.internal:host-gateway` for Linux, and env-var overrides for `SSH_PORT` — see `NOTES.md` § User Switch Plan → Portability addendum.
 
 **Reason (for the plan, confirmed):** files pi writes into bind-mounted host directories must carry the host user's UID/GID or the host user cannot manage them later. Host facts used by the plan: the host user's UID maps directly to the same container UID on macOS Docker Desktop (verified 2026-09-29); in Debian trixie GID 20 is already the existing `dialout` group, so no groupadd is needed; pi's profile directory contains relative symlinks that break if the profile is mounted at anything other than a flat path under the home directory. (The concrete UID/GID pair is recorded in `NOTES.md`, the maintainer's working notes.)
 

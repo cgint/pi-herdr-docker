@@ -7,7 +7,12 @@
 **Status:** active
 **Evidence:** inferred
 **Source:** verified findings, `NOTES.md`; rejected-approaches section there
-**Revisit when:** macOS Docker Desktop's gRPC-Fuse limitations change
+**Revisit when:** macOS Docker Desktop's gRPC-Fuse limitations change — **the condition fired on 2026-10-24**: osxfs was removed (4.80.0) and AF_UNIX sockets over VirtioFS work both ways (4.86.0), and a live re-test of `bind()`/`connect()`/`rename()`/`unlink()` on a bind mount passed. This decision is now **provisional**: it stays in force until herdr itself is tested on a bind-mounted state directory (sockets plus repeated atomic `session.json` writes across a down/up cycle).
+
+> **2026-10-24 status note:** the three "Rejected alternative" paragraphs below were
+true of the osxfs backend and remain a correct record of why the volume exists. They
+must not be cited as current facts. See `NOTES.md` § "Bind-mount socket/rename re-test
+(2026-10-24)" and `context/host-platform.md` (same date) for the evidence.
 
 Herdr's state directory is a Docker named volume, not a bind mount from the host.
 
@@ -17,7 +22,7 @@ Herdr's state directory is a Docker named volume, not a bind mount from the host
 
 **Rejected alternative:** bind-mount individual state files (session file, history file) from the host. Herdr persists state with an atomic rename pattern; rename-over-existing-file fails silently on macOS bind mounts. Herdr would start but never persist anything.
 
-**Rejected alternative:** a per-project host directory mounted in, instead of one state directory. Same socket and rename failure as the first two; the named volume is the only persistence that works on this host.
+**Rejected alternative:** a per-project host directory mounted in, instead of one state directory. Same socket and rename failure as the first two; the named volume is the only persistence that works on this host. *(Superseded 2026-10-24: the underlying failures were osxfs-era; see the status note above. Re-test before relying on it.)*
 
 ## Herdr state directory follows $HOME/.config/herdr; HERDR_CONFIG_DIR is not honored
 

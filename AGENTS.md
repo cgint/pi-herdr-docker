@@ -36,6 +36,7 @@ No "pinching through docker" — `./herdr.sh attach` gets you to the TUI.
 | `docs/herdr-web-ui-on-top.md` | herdr-web bridge architecture (implemented 2026-09-29) |
 | `docs/remote-api-over-ssh.md` | Remote herdr API via SSH (agent-control surface the web bridge lacks) |
 | `docs/docker-sandbox-sbx.md` | pi+herdr in Docker Sandboxes (sbx): requirements, pros/cons, hardening spike; T1–T6 passed on pluto 2026-11-11 (`spike/sbx/`) |
+| `docs/greenfield-architecture-options.md` | Design discussion (NOT a decision, NOT verified findings): what the stack would be greenfield, tool-scope vs process-scope, three candidates |
 | `agent/` | Agent-internal handoff briefs (private, not repo memory) |
 | `vendor/` | Bundled binaries (herdr-web x86_64, ignored by git) |
 
@@ -104,8 +105,14 @@ blocked, report **not persisted**.
 
 ## Key constraints (do not rediscover)
 
-- **macOS Docker Desktop:** unix sockets and `rename()` (atomic writes)
-  fail on bind mounts. Use named volumes for herdr state.
+- **macOS Docker Desktop (REVISED 2026-10-24):** the old rule "unix sockets and
+  `rename()` fail on bind mounts, so use named volumes" is **no longer proven**.
+  Docker Desktop 4.80.0 removed osxfs and 4.86.0 made AF_UNIX sockets work over
+  VirtioFS; a live re-test here passed `bind()`, `connect()`, `unlink()` and
+  `rename()`-over-existing on a bind mount. The named volume is still the shipped
+  default because **herdr itself** on a bind-mounted state dir is untested. Before
+  changing anything, run that end-to-end test — see `NOTES.md` § "Bind-mount
+  socket/rename re-test (2026-10-24)".
 - **Pi ≥ 0.84 requires Node ≥ 22.** Base image: `node:22-trixie`.
 - **Pi package:** `@earendil-works/pi-coding-agent` (not the frozen
   `@mariozechner/pi-coding-agent`).

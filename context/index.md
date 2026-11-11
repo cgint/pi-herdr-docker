@@ -28,6 +28,7 @@
 
 - [cache.md](cache.md) — why caches stay in /tmp instead of mounted host paths
 - [container-runtime.md](container-runtime.md) — base image choice; the open root-vs-named-user switch
+- [context.md](context.md) — the market context this repo sits in: alternatives, EU constraints, verdicts
 
 ## D
 

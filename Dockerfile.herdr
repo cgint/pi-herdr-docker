@@ -79,11 +79,19 @@ RUN set -euo pipefail; \
     *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
   esac; \
   curl -fsSL "https://herdr.dev/latest.json" -o /tmp/herdr-latest.json; \
-  url=$(jq -r ".assets[\"${herdr_asset}\"]" /tmp/herdr-latest.json); \
-  sha=$(jq -r ".sha256[\"${herdr_asset}\"]" /tmp/herdr-latest.json); \
-  ver=$(jq -r ".version" /tmp/herdr-latest.json); \
-  if [[ "$ver" != "$HERDR_VERSION" ]]; then \
-    echo "herdr manifest version $ver != pinned $HERDR_VERSION — refusing to install a different version" >&2; \
+  # Resolve the *pinned* version from the releases map. The top-level object of
+  # latest.json is "latest", which drifts as herdr ships new releases and would
+  # no longer match HERDR_VERSION. Pulling the exact pinned entry keeps the pin
+  # meaningful and makes the build immune to future herdr releases.
+  rel=$(jq -r ".releases[\"${HERDR_VERSION}\"]" /tmp/herdr-latest.json); \
+  if [[ "$rel" == "null" || -z "$rel" ]]; then \
+    echo "herdr ${HERDR_VERSION} not found in herdr.dev releases map" >&2; \
+    exit 1; \
+  fi; \
+  url=$(jq -r ".assets[\"${herdr_asset}\"]" <<< "$rel"); \
+  sha=$(jq -r ".sha256[\"${herdr_asset}\"]" <<< "$rel"); \
+  if [[ -z "$url" || "$url" == "null" || -z "$sha" || "$sha" == "null" ]]; then \
+    echo "herdr ${HERDR_VERSION} manifest missing asset/sha for ${herdr_asset}" >&2; \
     exit 1; \
   fi; \
   curl -fsSL "$url" -o /tmp/herdr; \

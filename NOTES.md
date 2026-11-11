@@ -214,6 +214,12 @@ keeps a sane name for the common case; the `--user` flag overrides ownership.
 
 ### macOS Docker Desktop filesystem limitations
 
+> **Partially superseded 2026-10-24 — see "Bind-mount socket/rename re-test" below.**
+> The two bullets that follow were true of the legacy osxfs/gRPC-Fuse backend. Docker
+> Desktop removed osxfs in 4.80.0 and made AF_UNIX sockets work over VirtioFS in
+> 4.86.0; a direct re-test now passes. Read the bullets as historical context, not
+> as current constraints.
+
 - **Unix domain sockets** cannot be created on macOS bind mounts. `bind()` fails with
   `EINVAL`, `unlink()` fails with `ENOTSUP` (gRPC-Fuse limitation).
 - **Atomic file writes** (`rename()` over an existing file) silently fail on bind mounts.
@@ -221,8 +227,38 @@ keeps a sane name for the common case; the `--user` flag overrides ownership.
   never persists state (the rename fails, the original file is unchanged).
 - **Regular file reads/writes** (create new, truncate, write) work fine on bind mounts.
 - **Docker named volumes** are Linux filesystems inside the VM — sockets and atomic
-  writes work normally. This is the only way to persist herdr state on macOS.
-- **Volume naming**: Docker compose names volumes as `<project>_<volume>` where
+  writes work normally. ~~This is the only way to persist herdr state on macOS.~~
+  (No longer established — see the 2026-10-24 re-test below.)
+- ### Bind-mount socket/rename re-test (2026-10-24) — constraint no longer holds
+
+Trigger: Docker Desktop release notes now claim the old limitation is gone.
+
+- **4.80.0 (2026-06-29):** "Removed the legacy osxfs file sharing. Users still on
+  osxfs are migrated to VirtioFS."
+- **4.86.0 (2026-08-10):** "AF_UNIX sockets shared over VirtioFS now work in both
+  directions (host to guest and guest to host)."
+  Source: https://docs.docker.com/desktop/release-notes/
+
+Direct test on this host (test dir bind-mounted at `/data`, image
+`pi-agent-herdr:node22`, entrypoint bypassed):
+
+```
+bind on bind-mount: OK
+connect: OK, got b'hi'
+rename-over: OK -> A      # os.rename("/data/a", "/data/b") over an existing file
+unlink: OK
+```
+
+So `bind()`, `listen()`, `connect()`, `unlink()` and atomic `rename()`-over-existing
+all work across a Docker Desktop bind mount. The failure mode the named volume was
+designed around was an osxfs artifact.
+
+**Still unverified:** whether *herdr itself* behaves on a bind-mounted state dir
+(sockets + repeated atomic `session.json` writes across a down/up cycle). Until
+that end-to-end test passes, the named volume stays the shipped default. Do not
+switch based on the primitives alone.
+
+**Volume naming**: Docker compose names volumes as `<project>_<volume>` where
   project defaults to the compose file's `name:` field (here: `pi-agent-herdr`).
   The actual volume is `pi-agent-herdr_herdr-state` (underscore, not hyphen).
   There is also an orphan empty volume `pi-agent-herdr-herdr-state` (hyphens) from
@@ -376,3 +412,101 @@ Full results + test matrix: `docs/docker-sandbox-sbx.md`; template/probes: `spik
 - **`@mariozechner/pi-coding-agent`**: frozen at 0.73.1, doesn't know newer
   model IDs. Use `@earendil-works/pi-coding-agent`.
 - **Node 20 base image**: pi ≥ 0.84 requires Node 22 (`fs.globSync`).
+
+## Sandbox complements — OpenShell / Gondolin (2026-10-24)
+
+Follow-up research on the two options that close the gaps plain Docker cannot express
+(credential brokering, mediated egress, per-path filesystem policy). Full citations live
+in `agent/research/X3-openshell-targeted.md` (OpenShell) and
+`agent/research/X4-gondolin-targeted.md` (Gondolin) — both gitignored.
+
+### Host reality (verified this session)
+
+- This dev host is **Ubuntu 26.04.1 x86_64**, UID 1000, `/dev/kvm` present, `vmx` present.
+  `AGENTS.md` and `context/host-platform.md` describe macOS Docker Desktop: that is the
+  repo's *documented target*, not this machine.
+- Container `pi-agent-herdr:node22`: **no `/dev/kvm`, no `/dev/fuse`**, no `SYS_ADMIN` in
+  `CapEff`; Node **v22.23.4**; pi 1.4.0.
+- Apple `container` is therefore inapplicable here (macOS 26 + Apple silicon only).
+
+### Gondolin (earendil-works)
+
+- `[L1]` TLS MITM: host presents per-SNI cert signed by a local CA; "The CA certificate is
+  made available inside the guest" so curl/node/python trust it automatically.
+- `[L1]` HTTP/1.x only — HTTP/2, HTTP/3, QUIC, WebRTC unsupported; `CONNECT` denied;
+  unknown TCP blocked; internal ranges blocked by default; synthetic DNS by default.
+- `[L1]` Secrets: `createHttpHooks({ allowedHosts, secrets })` returns `{ httpHooks, env }`,
+  both passed to `VM.create`; guest sees `<marker>.<name>` placeholders; substitution on
+  exact placeholder bytes in headers (query strings when enabled); disallowed host ⇒
+  request blocked.
+- `[L1]` **Correction to `G1`:** the shipped pi example does **not** wire secrets.
+  `index.ts:315-322` `sanitizeEnv` copies every string env var into the guest and there is
+  no `httpHooks` call. pi's `docs/containerization.md` agrees: "Do not use this pattern as
+  a credential boundary unless you remove sensitive variables or change the extension's
+  environment handling." The boundary is code we would write.
+- `[L1]` Concurrent attach is supported: "Each attached client gets an independent command
+  channel; concurrent attaches do not share request IDs or cross-talk." → the herdr-pane
+  fit is good.
+- `[L1]` Alpine-only image builder; example `rootfsPackages` already lists `nodejs`, `npm`,
+  `python3`, `ca-certificates`; host build needs `cpio`, `lz4`, `e2fsprogs`.
+- `[L1]` QEMU: Linux needs `/dev/kvm`; TCG fallback exists but "much slower, not
+  recommended".
+- `[L1]` Version gate: npm engines `0.12.0` = `node >=23.6.0`, `0.14.0` = `node >=22.19.0`;
+  CHANGELOG 0.13.0 "Lower the minimum supported Node.js version to 22.19.0". Image Node
+  22.23.4 ⇒ pin the example's dependency to ≥0.13.0.
+- `[U]` **Unverified:** running the Gondolin host process (QEMU) inside a Docker container
+  with `--device /dev/kvm`; SSE/streaming through the mediator; CA trust in a custom
+  rootfs; example-code compatibility 0.12 → 0.14.
+
+### OpenShell (NVIDIA)
+
+- `[L1]` **Corrects `A1`:** only the canonical main process has a single stdin owner
+  ("One attachment owns stdin at a time"), but `sandbox exec --tty -- /bin/bash -l` is the
+  documented way to get "a new independent shell" — concurrent independent shells are
+  supported.
+- `[L1]` Restart replaces the process: the gateway owns restart policy, native runtime
+  restarts stay disabled, and it "retain[s] the sandbox record and driver-supported
+  persistent storage" — no PTY or memory restore.
+- `[L1]` Credentials: providers attach placeholders; "the proxy substitutes a real
+  credential only after network policy and endpoint binding both pass" (binary +
+  host/port/path).
+- `[L1]` **Contradiction:** pi's `containerization.md` says to point pi at an
+  OpenAI/Anthropic-compatible endpoint "exposed by the gateway", but OpenShell v0.1.5
+  "removed the workspace-global managed inference route and the `openshell inference`
+  commands". In 0.1.5 the workload calls the provider's **native** endpoint; the
+  placeholder is substituted in flight.
+- `[L1]` Docker driver needs the host Docker socket (`socket_path = /var/run/docker.sock`);
+  workload always `network=none`. Podman driver is rootless (Podman 5.x, cgroups v2, user
+  socket). Bind mounts exist but are warned against as isolation bypasses.
+- `[U]` **Unverified:** OpenShell inside our container (rootless Podman route); herdr as a
+  sandbox canonical main process with panes via `exec --tty`; GitHub maturity signals.
+
+### Remote execution arm — `@earendil-works/pi-env` (2026-10-24)
+
+- `[L1]` `@earendil-works/pi-env` 1.4.0 exists: a **Rust daemon** (`packages/env/daemon`,
+  Cargo) deployed over SSH that speaks a framed protocol on stdin/stdout, plus a TS
+  `RemoteExecutionEnv` client. Ships 8 prebuilt binaries (Linux/macOS/Android/Windows ×
+  x64/arm64). Detail: `agent/research/X5-pi-env.md`.
+- `[L1]` It is the execution backend for **Pi Durable** (`@earendil-works/pi-durable`,
+  marked Experimental), **not** a tool proxy for the pi coding agent: the CLI has no
+  `ExecutionEnv` hook and its `docs/containerization.md` lists only sbx, OpenShell and
+  Gondolin.
+- `[L1]` It is **not a sandbox**: trusted remote host, no per-path policy, no egress
+  mediation, no credential brokering. It closes "run elsewhere", not the three gaps.
+- `[L1]` SSH is hardened: `BatchMode`, strict host-key checking against its own
+  known-hosts under a fixed alias, no forwarding of any kind, daemon verified by SHA-256
+  before every start, and no listening socket (stdin/stdout only).
+- `[L1]` Remote ops: file ops, `exec` (string or argv, process-group kill on abort),
+  `pty` (`openTerminal`), `watch` (inotify/FSEvents + polling), `listFiles`.
+- `[U]` Bridging pi CLI tools to `RemoteExecutionEnv` would be our own extension; none
+  published. Daemon exits after 30 s without bytes or when stdin ends.
+
+### Open item
+
+- Probe: Gondolin in-container with `--device /dev/kvm` and a dependency bump to ≥0.13.0.
+  Pass ⇒ additive tool-execution layer under herdr panes; fail ⇒ record the exact break.
+- Greenfield reasoning (what the stack would be if nothing existed yet, incl. the
+  tool-scope vs process-scope fork and three candidates) lives in
+  `docs/greenfield-architecture-options.md` — **design discussion, not a decision and
+  not verified findings**.
+

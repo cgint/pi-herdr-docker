@@ -1,0 +1,9 @@
+# UC2 sandbox policy: no host mounts, no network rules of its own. The only egress is
+# what the uc2-github-push provider profile contributes (github.com:443, git, one repo).
+version: 1
+filesystem_policy:
+  include_workdir: true
+  read_only: [/usr, /lib, /bin, /etc, /proc, /dev/urandom, /var/log]
+  read_write: [/tmp, /dev/null]
+landlock:
+  compatibility: hard_requirement

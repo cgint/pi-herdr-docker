@@ -3,7 +3,10 @@
 Echoes back only whether the Authorization header carried the real canary, so the
 real value is never printed into sandbox-visible output.
 
-    CANARY=... python3 spike/sbx/echo-server.py 40199
+    CANARY=... python3 spike/sbx/echo-server.py 40199 [bind-addr]
+
+Binds 127.0.0.1 by default: sbx reaches it via host.docker.internal (the proxy
+connects to host loopback). Never bind 0.0.0.0 on a public host.
 """
 import http.server
 import os
@@ -23,4 +26,5 @@ class Handler(http.server.BaseHTTPRequestHandler):
         print(f"{self.client_address[0]} {self.path} real_canary_received={CANARY in auth}", flush=True)
 
 
-http.server.ThreadingHTTPServer(("0.0.0.0", int(sys.argv[1])), Handler).serve_forever()
+bind = sys.argv[2] if len(sys.argv) > 2 else "127.0.0.1"
+http.server.ThreadingHTTPServer((bind, int(sys.argv[1])), Handler).serve_forever()

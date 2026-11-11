@@ -18,6 +18,7 @@ below are next hardening steps, not blockers.
 | T6 auto-stop | ✅ with `-d` | by default a local sandbox **auto-stops 30 s after its last session disconnects** (background processes don't count), which kills herdr. `sbx run -d --name <sbx>` switches it to detached mode permanently (log: "detached; not auto-stopping"); verified 65 s with no session, herdr still up |
 | T6 stop/start + resume | ✅ | files, policies, ports persist; processes don't. After `herdr server` restart, with `pane_history = true` (repo `herdr-config.toml`) + herdr's pi integration (`herdr integration install pi`): panes, scrollback **and pi with its conversation** come back. pi remembered a word across a full `sbx stop`/start. Published host port changes unless pinned |
 | T9 nested mounts (UC1) | ✅ | `shell <dev>/repoA <dev>:ro <dev>/repoA/.env:ro`: repoA rw (writes reach host), repoB + `<dev>` top level read-only; single-file `:ro` only write-protects (still readable); empty-file shadow `<emptyfile>:<dev>/repoA/.env:ro` hides it (0 bytes inside, host file unchanged) |
+| UC2 git round trip | ✅ | mountless sandbox; `sbx secret set github --sandbox uc2 -f < tokenfile` (fine-grained PAT, this repo only); allow only `github.com:443` + `api.github.com:443`; clone → branch → commit → `git push` OK (branch `sbx-uc2-test-20261111`); VM holds only a placeholder `GH_TOKEN`; example.com, gitlab.com, raw.githubusercontent.com, api.openai.com → 403, logged as denied. Note: the agent *can* exfiltrate via the allowed repo itself (push any data), so the token's scope is the real limit |
 | T2b keyed providers, T7 lateral, T8 kit | ⏳ | next steps |
 
 **Learned in practice:**
@@ -133,8 +134,10 @@ That combination is the "private data + untrusted input + exfil path" trifecta f
 - sbx shape: a **mountless** sandbox (no workspace path) and `git clone` inside.
 - Git credentials stay outside the VM: `sbx secret set github` makes the proxy put the
   real token on requests to github.com / api.github.com, and the VM sees a placeholder.
-  For `git push`, Docker's `sbx/github-clone` kit wires a credential helper
-  (`gh auth git-credential`). Plain `git push` over HTTPS without the kit is unverified.
+  **Verified (UC2 test, pluto):** plain `git clone` + `git push` over HTTPS work with
+  **no credential helper and no kit**; the proxy adds the auth. The VM sees only
+  `GH_TOKEN=gho_sbxproxymanaged000…` (hash differs from the real token, and no
+  `github_pat_` string anywhere in the VM).
 - Blast radius = what the token can do. Use a fine-grained PAT scoped to the target
   repos; the agent pushes branches and a human merges (protect `main`).
 - Egress: allow only github.com and the LLM endpoint.

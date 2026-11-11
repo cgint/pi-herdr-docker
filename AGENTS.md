@@ -36,6 +36,7 @@ No "pinching through docker" — `./herdr.sh attach` gets you to the TUI.
 | `docs/herdr-web-ui-on-top.md` | herdr-web bridge architecture (implemented 2026-09-29) |
 | `docs/remote-api-over-ssh.md` | Remote herdr API via SSH (agent-control surface the web bridge lacks) |
 | `docs/docker-sandbox-sbx.md` | pi+herdr in Docker Sandboxes (sbx): requirements, pros/cons, hardening spike; T1–T6 passed on pluto 2026-11-11 (`spike/sbx/`) |
+| `docs/nvidia-openshell.md` | pi+herdr in NVIDIA OpenShell 0.1.8 (MicroVM driver): spike T1–T6, T9 passed on pluto 2026-11-11, head-to-head vs sbx (`spike/openshell/`) |
 | `docs/greenfield-architecture-options.md` | Design discussion (NOT a decision, NOT verified findings): what the stack would be greenfield, tool-scope vs process-scope, three candidates |
 | `agent/` | Agent-internal handoff briefs (private, not repo memory) |
 | `vendor/` | Bundled binaries (herdr-web x86_64, ignored by git) |

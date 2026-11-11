@@ -1,0 +1,25 @@
+# Gateway config for the pluto spike: MicroVM driver only (never touches the host Docker
+# engine except to read local images). Render with envsubst (OS_ROOT, OS_OPT).
+[openshell]
+version = 2
+
+[openshell.gateway]
+compute_driver = "vm"
+log_level = "info"
+
+[openshell.drivers.vm]
+state_dir        = "${OS_ROOT}/vm"
+driver_dir       = "${OS_OPT}/libexec/openshell"
+default_image    = "pi-herdr-sbx:spike"
+bootstrap_image  = "nvcr.io/nvidia/base/ubuntu:24.04"
+vcpus            = 2
+mem_mib          = 2048
+overlay_disk_mib = 8192
+# T5/T9 need host directories inside the VM (virtiofs). Explicit unsafe opt-in, see
+# docs/nvidia-openshell.md: libkrun does not confine a compromised guest kernel to
+# the mount source.
+allow_driver_config = true
+enable_bind_mounts  = true
+
+[openshell.drivers.vm.resource_admission]
+enabled = false

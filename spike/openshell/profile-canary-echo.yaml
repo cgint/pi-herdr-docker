@@ -1,0 +1,26 @@
+# T1: credential provider bound to the host canary echo endpoint (spike/sbx/echo-server.py).
+# The sandbox sees only a placeholder in CANARY_KEY; the proxy swaps in the real value
+# for Authorization headers sent by curl to pluto:40199.
+id: canary-echo
+display_name: Canary echo (spike)
+description: Host echo endpoint that reports whether the real canary arrived
+category: other
+credentials:
+  - name: api_key
+    description: Random canary, not a real secret
+    env_vars:
+      - CANARY_KEY
+    required: true
+    auth_style: bearer
+    header_name: authorization
+discovery:
+  credentials:
+    - api_key
+endpoints:
+  - host: pluto
+    port: 40199
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+binaries:
+  - /usr/bin/curl

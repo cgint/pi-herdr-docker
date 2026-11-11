@@ -343,6 +343,11 @@ Full results + test matrix: `docs/docker-sandbox-sbx.md`; template/probes: `spik
   (`~/.pi/olla/settings.json`), not `sbx exec -e`.
 - Egress probes must check data, not `connect()`: sbx's transparent proxy accepts the
   connect and denies upstream.
+- Nested rw-in-ro mounts work (`shell <dev>/repoA <dev>:ro` → only repoA writable). A
+  single-file `:ro` entry only write-protects (still readable); hide secrets by mounting
+  an empty file over them (`<emptyfile>:<dev>/repoA/.env:ro` → 0 bytes inside).
+- Server w4u: Ubuntu 24.04 + nested KVM exposed (Hyper-V guest, `kvm_amd nested=1`,
+  `/dev/kvm` present) — sbx prerequisites met; sbx not yet installed/tested there.
 
 ## Requirements (user-stated)
 

@@ -17,6 +17,7 @@ below are next hardening steps, not blockers.
 | T6 herdr ops | ✅ | `setsid nohup herdr server` survives exec end (no entrypoint needed); UDS on VM disk OK; pi pane round trip OK; `sbx ports` → host **127.0.0.1 only** |
 | T6 auto-stop | ✅ with `-d` | by default a local sandbox **auto-stops 30 s after its last session disconnects** (background processes don't count), which kills herdr. `sbx run -d --name <sbx>` switches it to detached mode permanently (log: "detached; not auto-stopping"); verified 65 s with no session, herdr still up |
 | T6 stop/start + resume | ✅ | files, policies, ports persist; processes don't. After `herdr server` restart, with `pane_history = true` (repo `herdr-config.toml`) + herdr's pi integration (`herdr integration install pi`): panes, scrollback **and pi with its conversation** come back. pi remembered a word across a full `sbx stop`/start. Published host port changes unless pinned |
+| T9 nested mounts (UC1) | ✅ | `shell <dev>/repoA <dev>:ro <dev>/repoA/.env:ro`: repoA rw (writes reach host), repoB + `<dev>` top level read-only; single-file `:ro` only write-protects (still readable); empty-file shadow `<emptyfile>:<dev>/repoA/.env:ro` hides it (0 bytes inside, host file unchanged) |
 | T2b keyed providers, T7 lateral, T8 kit | ⏳ | next steps |
 
 **Learned in practice:**
@@ -110,6 +111,48 @@ That combination is the "private data + untrusted input + exfil path" trifecta f
 | 8 | Network policy | All outbound TCP denied unless allowed (`sbx policy allow network host:port`, `sbx policy ls`); UDP off, ICMP blocked; DNS via an internal resolver that enforces policy. Host services via `host.docker.internal` (allow as `localhost:<port>`). | L1 / W |
 | 9 | Workspace | Default: virtiofs passthrough at the **same absolute path, rw**. Extra workspaces as `PATH[:TARGET][:ro]`; a `:ro` entry may name a single file to hold it out of reach inside a writable workspace. `--clone`: host repo **ro** at `/run/sandbox/source` + a private in-sandbox clone. Mountless: files live only in the VM. | L1, CLI |
 | 10 | herdr ops | **No `sbx exec -d`** (detached exec unsupported). The daemon must be the workload's launch command (ENTRYPOINT/CMD); detach with `--detach-keys`. Shell/TUI: `sbx exec -it <sbx> bash` / `herdr`. Web UI: `sbx ports <sbx> --publish 8787`, which binds **host loopback by default** (good for blast radius); the in-VM server must listen on 0.0.0.0. Keep the herdr socket/state on VM-local disk, not the workspace mount. Local stop/start process survival is undocumented: plan to relaunch on every `sbx run`. | CLI, peer |
+
+## Use cases (user, 2026-11-11), same image for both
+
+**UC1 — host-attached: read most of the host, write only chosen dirs.**
+- sbx shape: `sbx create … shell <rw-dir>… ~/dev:ro ~/dev-external:ro`. Workspaces
+  take `PATH[:TARGET][:ro]`, so this matches run.sh's "ro + rw holes" model.
+- Verified (T9): an rw path *nested inside* an ro mount works.
+  `shell <dev>/repoA <dev>:ro` → repoA writable (writes reach the host); sibling repoB
+  and the `<dev>` top level give "Read-only file system". Same as plain Docker bind mounts.
+- Verified (T9): a single-file `:ro` entry (`<dev>/repoA/.env:ro`) only
+  **write-protects**; the file stays readable inside.
+- Hide a file by shadowing it with an empty host file: `<emptyfile>:<dev>/repoA/.env:ro`
+  → 0 bytes inside, secret not visible; the host file is unchanged.
+- Caveat: anything mounted ro is still *readable*, so it can reach the allowed LLM
+  endpoint. Don't mount secret-bearing paths (`~/.pi`, `~/.ssh`); `.env` files inside
+  `~/dev` repos are readable unless shadowed with the empty-file recipe above.
+- Runs where sbx runs locally (pluto, the Mac).
+
+**UC2 — self-contained: git clone/pull/push inside, nothing shared with the host.**
+- sbx shape: a **mountless** sandbox (no workspace path) and `git clone` inside.
+- Git credentials stay outside the VM: `sbx secret set github` makes the proxy put the
+  real token on requests to github.com / api.github.com, and the VM sees a placeholder.
+  For `git push`, Docker's `sbx/github-clone` kit wires a credential helper
+  (`gh auth git-credential`). Plain `git push` over HTTPS without the kit is unverified.
+- Blast radius = what the token can do. Use a fine-grained PAT scoped to the target
+  repos; the agent pushes branches and a human merges (protect `main`).
+- Egress: allow only github.com and the LLM endpoint.
+- **Portability catch:** local sbx needs KVM.
+  - **Hetzner Cloud VPS:** no nested virtualization (several 2026 reports), so no sbx.
+  - **Hetzner dedicated:** has KVM.
+  - **Google Cloud:** nested virtualization reportedly available (enable per instance; unverified).
+  - **w4u** (world4you, Linz; read-only probe 2026-11-11): Ubuntu 24.04.5 LTS, kernel
+    6.8.0-149, x86_64. Itself a Hyper-V guest, but nested virt is exposed: AMD EPYC-Milan
+    with AMD-V, `/dev/kvm` (root:kvm), `kvm_amd nested=1`. 4 vCPU, ~7 GiB RAM, ~170 GB
+    free disk, Docker installed; SSH alias `w4u` logs in as root. Verdict: prerequisites
+    met on paper, **not proven** (sbx not installed, no sandbox started). Caveats: microVM
+    performance nested in Hyper-V unmeasured; 7 GiB is tight (sbx default sandbox memory
+    = 50% of host).
+  - **Docker Cloud Sandboxes** (`sbx --cloud`, pay-as-you-go): the same template,
+    without our own VPS.
+  - Without KVM: the plain Docker image (`Dockerfile.herdr`) on a throwaway VPS, where
+    the VPS is the wall. The token then lives inside, so a scoped PAT matters even more.
 
 ## Topology fork
 

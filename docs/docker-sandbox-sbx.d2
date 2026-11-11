@@ -1,0 +1,25 @@
+direction: down
+
+host: "**Host** (Linux/macOS)" {
+  keychain: "OS keychain\nreal LLM creds"
+  proxy: "sbx host proxy\npolicy + cred injection"
+  repo: "repo (workspace)"
+  keychain -> proxy
+}
+
+a: "**A: one sandbox (recommended first)**" {
+  style.fill: "#e8f4ff"
+  vm: "microVM\nherdr server\npi · pi · pi"
+}
+
+b: "**B: sandbox per agent**" {
+  style.fill: "#fff4e0"
+  vm1: "microVM: pi"
+  vm2: "microVM: pi"
+}
+
+a.vm -> host.proxy: "egress\n(sentinel key)"
+b.vm1 -> host.proxy
+b.vm2 -> host.proxy
+host.repo -> a.vm: "virtiofs rw\nor --clone ro"
+host.proxy -> internet: "allowlisted only"

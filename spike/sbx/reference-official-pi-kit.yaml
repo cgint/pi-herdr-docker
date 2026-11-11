@@ -1,0 +1,50 @@
+# Reference copy (2026-11-11) of Docker's official pi kit: sbx kit inspect docker.io/sbx/pi-kit:latest --format yaml
+# Blueprint for T2b: OAuth in ~/.pi/agent/auth.json via sentinels + host-side token refresh.
+schemaVersion: "2"
+kind: sandbox
+name: pi
+displayName: Pi
+description: Minimal terminal coding agent with extensible tools, skills, and TUI
+sandbox:
+  image: docker.io/sbx/pi-image:latest
+  entrypoint:
+  - pi
+agentInstructions:
+  filename: AGENTS.md
+permissions:
+  network:
+    allow:
+    - api.anthropic.com
+    - registry.npmjs.org
+    - platform.claude.com:443
+credentials:
+- service: anthropic
+  apiKey:
+    name: ANTHROPIC_API_KEY
+    proxyManaged: true
+    inject:
+    - domain: api.anthropic.com
+      header: x-api-key
+      format: "%s"
+  oauth:
+    tokenEndpoint:
+      host: platform.claude.com
+      path: /v1/oauth/token
+    resourceHosts:
+    - api.anthropic.com
+    sentinels:
+      accessToken: sk-ant-oat01-proxy-managed
+      refreshToken: sk-ant-ort01-proxy-managed
+    credentialFile:
+      path: ~/.pi/agent/auth.json
+      structure:
+        anthropic:
+          access: "{{.AccessToken}}"
+          expires: "{{.ExpiresAt}}"
+          refresh: "{{.RefreshToken}}"
+          type: oauth
+setup:
+  install:
+  - command: if [ -n "${HTTP_PROXY:-}" ]; then npm config set proxy="$HTTP_PROXY" https-proxy="${HTTPS_PROXY:-$HTTP_PROXY}"; fi
+    user: "1000"
+    description: Point npm at the sandbox proxy in ~/.npmrc so pi's runtime npm use (`pi install npm:...`, `pi update`, startup package fetches) works in exec contexts that do not inherit the proxy environment variables

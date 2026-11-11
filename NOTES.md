@@ -285,6 +285,29 @@ keeps a sane name for the common case; the `--user` flag overrides ownership.
 - `herdr workspace create --cwd <path> --label <name>` — returns pane ID in
   `.result.root_pane.pane_id`.
 
+### Docker Sandboxes (sbx) on pluto (verified 2026-11-11, sbx v0.51.0)
+
+Full results + test matrix: `docs/docker-sandbox-sbx.md`; template/probes: `spike/sbx/`.
+
+- Install from the GitHub `docker/sbx-releases` `.deb` (self-contained; leaves `docker.io`
+  alone). **Not** `get.docker.com SBX=1`, which would replace the host Docker engine.
+- `sbx login` (normal Docker account) is required for *every* command, including local ones.
+- herdr + pi run inside one sandbox; `setsid nohup herdr server` survives `sbx exec`
+  end (no `exec -d` exists). Processes do not survive `sbx stop`; files do.
+- **A local sandbox auto-stops 30 s after its last session disconnects**, killing
+  herdr. Fix: `sbx run -d --name <sbx>` (permanent detached mode).
+- With `pane_history = true` + `herdr integration install pi` inside the VM, a herdr
+  restart brings back panes, scrollback and pi with its conversation. pi extensions
+  must be installed in `~/.pi/agent/extensions/`, not passed via `-e`, because resume
+  drops CLI flags.
+- Docker ships an official pi kit (`docker.io/sbx/pi-kit`, image `sbx/pi-image`);
+  its OAuth-sentinel spec for `~/.pi/agent/auth.json` is saved in
+  `spike/sbx/reference-official-pi-kit.yaml`.
+- herdr panes inherit the server env, so configure pi providers via files
+  (`~/.pi/olla/settings.json`), not `sbx exec -e`.
+- Egress probes must check data, not `connect()`: sbx's transparent proxy accepts the
+  connect and denies upstream.
+
 ## Requirements (user-stated)
 
 1. **Avoid "pinching through docker"** — the host terminal should be a simple

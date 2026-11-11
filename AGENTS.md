@@ -35,6 +35,7 @@ No "pinching through docker" — `./herdr.sh attach` gets you to the TUI.
 | `NOTES.md` | Verified findings, rejected approaches, future ideas |
 | `docs/herdr-web-ui-on-top.md` | herdr-web bridge architecture (implemented 2026-09-29) |
 | `docs/remote-api-over-ssh.md` | Remote herdr API via SSH (agent-control surface the web bridge lacks) |
+| `docs/docker-sandbox-sbx.md` | pi+herdr in Docker Sandboxes (sbx): requirements, pros/cons, hardening spike; T1–T6 passed on pluto 2026-11-11 (`spike/sbx/`) |
 | `agent/` | Agent-internal handoff briefs (private, not repo memory) |
 | `vendor/` | Bundled binaries (herdr-web x86_64, ignored by git) |
 
@@ -151,3 +152,10 @@ blocked, report **not persisted**.
 3. **Local LLM** — test `OLLA_BASE_URL` reachability from container when
    the gateway is running.
 4. **Multi-container** — one herdr container per repo, for parallel work.
+5. **Sandbox hardening (sbx, then OpenShell)**: goal is running pi + herdr with
+   reduced blast radius (secrets out of sight, egress, FS reach). User stance
+   (2026-11-11): *any sandbox beats no sandbox*; collect pros and cons, but don't
+   block on imperfections; harden **step by step**. sbx spike T1–T6 passed (see
+   `docs/docker-sandbox-sbx.md`); next: T2b keyed providers (codex/copilot,
+   blueprint `spike/sbx/reference-official-pi-kit.yaml`), T7/T8, `up.sh` wrapper,
+   OpenShell comparison.

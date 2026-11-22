@@ -1,19 +1,31 @@
 # Pi state
 
-## ~/.pi mounted at a flat path, not per-profile
+## Original flat Pi mount kept profile symlinks working
 
 **Id:** 7093db79-50bd-4eae-b4e9-d8b15ff11aad
 **Type:** decision
-**Status:** active
+**Status:** superseded
 **Evidence:** inferred
 **Source:** user requirements, `NOTES.md`
-**Revisit when:** pi changes how it resolves profile paths
+**Superseded by:** Herdr uses Pi’s native agent path
 
-The container mounts the host's `~/.pi` at a single flat path (currently `/pi`) and points pi at the active profile from there, rather than mounting individual profile subdirectories.
+Herdr formerly mounted the host’s `~/.pi` at `/pi` and directed Pi to a chosen profile there.
 
 **Reason:** pi's profile directories contain symlinks with relative targets (e.g. a profile's auth file symlinks to a shared location via `../../../agent/...`). Mounting the whole tree at one path keeps those relative links resolving; mounting a profile directory on its own breaks every relative link inside it, because the target directory no longer exists at the relative path.
 
 **Rejected alternative:** mount only the active profile directory. Breaks the internal relative symlinks, so pi would see an incomplete, broken profile.
+
+
+## Herdr uses Pi’s native agent path
+
+**Id:** 18007334-6830-4f75-91c6-ec6d4374bea7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** host Pi consolidation and packaged pi-subagent-herdr worker runtime
+**Revisit when:** the container user or reporter lookup changes
+
+Herdr and Herdr web bind the host’s canonical Pi agent directory at `/root/.pi/agent`. The packaged supervisor discovers the reporter through `$HOME/.pi/agent`, so a mount at `/pi/agent` plus a Pi environment override would configure Pi but leave the reporter lookup at a different path.
 
 ## Pi extensions resolve their dependencies by walking up the directory tree
 

@@ -27,7 +27,7 @@ services:
     ports:
       - "2222:22"
     volumes:
-      - ${HOME}/.pi:/pi
+      - ${HOME}/.pi/agent:/root/.pi/agent
       - ./herdr-config.toml:/opt/herdr-config.toml:ro
       - herdr-state:/root/.config/herdr
       # Host dev directories (read-only, same path as host).
@@ -38,7 +38,6 @@ services:
       - ${WORKDIR_REPO:-.}:/workspace/current-repo
       - ${HOME}/.ssh:/host-ssh:ro
     environment:
-      - PI_CODING_AGENT_DIR=/pi/profiles/${PROFILE:-minimal}/agent
       - UV_CACHE_DIR=/tmp/uv-cache
       - XDG_CACHE_HOME=/tmp/xdg-cache
       - XDG_DATA_HOME=/tmp/xdg-data

@@ -28,7 +28,6 @@
 #
 # Env:
 #   WORKDIR_REPO     repo to mount at /workspace/current-repo (default: $PWD)
-#   PROFILE          pi profile (default: minimal)
 #   OLLA_BASE_URL    local LLM gateway (default: http://host.docker.internal:40114)
 #   OLLA_PROVIDER_NAME provider name for the gateway (default: home-llm)
 #   RW_DIRS          colon-separated list of host dirs to mount rw
@@ -60,7 +59,6 @@ if [[ -n "$INST" ]]; then
   PORT=$((2222 + $(printf '%s' "$INST" | cksum | awk '{print $1 % 200}')))
 fi
 
-PROFILE="${PROFILE:-minimal}"
 WORKDIR_REPO="${WORKDIR_REPO:-$PWD}"
 
 # --- build volume mount flags ---
@@ -100,7 +98,7 @@ docker_up() {
     --init \
     -t \
     -p "${PORT}:22" \
-    -v "${HOME}/.pi:/pi" \
+    -v "${HOME}/.pi/agent:/root/.pi/agent" \
     -v "$(pwd)/herdr-config.toml:/opt/herdr-config.toml:ro" \
     -v "pi-agent-herdr_${VOL}:/root/.config/herdr" \
     -v "${HOME}/dev:/Users/cgint/dev:ro" \
@@ -108,7 +106,6 @@ docker_up() {
     "${rw_flags[@]+"${rw_flags[@]}"}" \
     -v "${WORKDIR_REPO}:/workspace/current-repo" \
     -v "${HOME}/.ssh:/host-ssh:ro" \
-    -e "PI_CODING_AGENT_DIR=/pi/profiles/${PROFILE}/agent" \
     -e "UV_CACHE_DIR=/tmp/uv-cache" \
     -e "XDG_CACHE_HOME=/tmp/xdg-cache" \
     -e "XDG_DATA_HOME=/tmp/xdg-data" \
@@ -133,7 +130,7 @@ if [[ "$CMD" == up-web || "$CMD" == web-url || "$CMD" == web-log || "$CMD" == at
         echo "$C is running — web mode drives the SAME herdr-state volume; stop it first: $0 down" >&2
         exit 1
       else
-        WORKDIR_REPO="$WORKDIR_REPO" PROFILE="$PROFILE" \
+        WORKDIR_REPO="$WORKDIR_REPO" \
           docker compose -f docker-compose.herdr-web.yml up -d --build
       fi
       docker compose -f docker-compose.herdr-web.yml ps

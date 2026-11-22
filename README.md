@@ -158,11 +158,13 @@ on your host terminal, attached to the container's herdr server. Detach with
 | Var | Default | Purpose |
 |---|---|---|
 | `WORKDIR_REPO` | `$PWD` | Repo to mount at `/workspace/current-repo` |
-| `PROFILE` | `minimal` | Pi profile (under `~/.pi/profiles/`) |
 | `OLLA_BASE_URL` | `http://host.docker.internal:40114` | Local LLM gateway |
 | `GEMINI_API_KEY` | _(empty)_ | Pass through from host env |
 
 ### Note: host-specific mount paths
+
+Herdr and Herdr web mount the host’s `~/.pi/agent` at `/root/.pi/agent`.
+Pi and the bundled Herdr lifecycle reporter both resolve it at that path.
 
 `herdr.sh` mounts `~/dev` and `~/dev-external` at fixed in-container paths
 (`/Users/cgint/dev`, `/Users/cgint/dev-external`) — these reflect the
